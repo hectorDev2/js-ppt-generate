@@ -12,9 +12,14 @@ export function parse(input: string, sourceLabel?: string): ParseResult {
   const errors: string[] = []
   const warnings: string[] = []
 
+  const cleaned = input
+    .replace(/^```[\w]*\n?/gm, "")
+    .replace(/\n?```$/gm, "")
+    .trim()
+
   let parsed: unknown
   try {
-    parsed = JSON.parse(input)
+    parsed = JSON.parse(cleaned)
   } catch (e) {
     return { dnt: null, errors: [`${sourceLabel || "JSON"} inválido: ${(e as Error).message}`], warnings: [] }
   }

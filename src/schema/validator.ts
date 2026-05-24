@@ -75,6 +75,7 @@ function normalizeSlide(slide: unknown): Record<string, unknown> {
 
 function extractElements(slide: Record<string, unknown>): Record<string, unknown>[] {
   const els: Record<string, unknown>[] = []
+  const slideType = (slide.type as string) || ""
 
   if (slide.title) {
     els.push({ type: "heading", level: 1, content: slide.title })
@@ -82,6 +83,84 @@ function extractElements(slide: Record<string, unknown>): Record<string, unknown
   if (slide.subtitle) {
     els.push({ type: "heading", level: 2, content: slide.subtitle })
   }
+
+  // comparison: left / right
+  if (slide.left && typeof slide.left === "object") {
+    const l = slide.left as Record<string, unknown>
+    const r = slide.right as Record<string, unknown>
+    els.push({ type: "heading", level: 2, content: "Tradicional", style: { fontSize: 14 } })
+    if (Array.isArray(l.items)) {
+      els.push({ type: "list", items: l.items.map((i: unknown) => String(i)) })
+    }
+    els.push({ type: "heading", level: 2, content: "AI Runtime", style: { fontSize: 14 } })
+    if (r && Array.isArray(r.items)) {
+      els.push({ type: "list", items: r.items.map((i: unknown) => String(i)) })
+    }
+  }
+
+  // chart
+  if (slide.chart && typeof slide.chart === "object") {
+    const ch = slide.chart as Record<string, unknown>
+    const labels = (ch.labels || []) as string[]
+    const values = (ch.values || []) as number[]
+    if (labels.length > 0) {
+      els.push({
+        type: "table",
+        headers: ["Métrica", "Tokens"],
+        rows: labels.map((l, i) => [l, String(values[i] || "")]),
+      })
+    }
+  }
+
+  // stats with cards
+  if (Array.isArray(slide.cards)) {
+    els.push({
+      type: "grid",
+      columns: Math.min((slide.cards as unknown[]).length, 3),
+      items: (slide.cards as Record<string, unknown>[]).map((c) => ({
+        title: c.title || "",
+        body: (c.value || "") + (c.description ? " — " + c.description : ""),
+      })),
+    })
+  }
+
+  // steps / diagram / workflow
+  if (Array.isArray(slide.steps)) {
+    els.push({ type: "list", items: (slide.steps as string[]).map((s) => String(s)) })
+  }
+  if (Array.isArray(slide.diagram)) {
+    els.push({ type: "list", items: (slide.diagram as string[]).map((d) => String(d)) })
+  }
+
+  // features array
+  if (Array.isArray(slide.features)) {
+    els.push({
+      type: "grid",
+      columns: Math.min((slide.features as unknown[]).length, 4),
+      items: (slide.features as Record<string, unknown>[]).map((f) => ({
+        title: f.title || "",
+        body: f.description || f.body || "",
+      })),
+    })
+  }
+
+  // segments
+  if (Array.isArray(slide.segments)) {
+    els.push({ type: "list", items: (slide.segments as string[]).map((s) => String(s)) })
+  }
+
+  // comparison stats blocks
+  if (Array.isArray(slide.stats)) {
+    for (const st of slide.stats as Record<string, unknown>[]) {
+      els.push({
+        type: "stat",
+        value: st.value || st.number || "",
+        label: st.label || st.name || "",
+        detail: st.detail || st.change || "",
+      })
+    }
+  }
+
   if (slide.paragraph) {
     els.push({ type: "text", content: slide.paragraph })
   }
@@ -96,29 +175,23 @@ function extractElements(slide: Record<string, unknown>): Record<string, unknown
       })
     }
   }
-  if (slide.body) {
-    els.push({ type: "text", content: slide.body })
-  }
-  if (slide.description && !slide.content) {
-    els.push({ type: "text", content: slide.description })
-  }
+  if (slide.body) els.push({ type: "text", content: slide.body })
+  if (slide.description && !slide.content) els.push({ type: "text", content: slide.description })
+
+  // leftCode / rightJson (code examples)
+  if (slide.leftCode) els.push({ type: "text", content: "Código tradicional:\n" + String(slide.leftCode).slice(0, 200), style: { fontSize: 9 } })
+  if (slide.rightJson) els.push({ type: "text", content: "JSON Runtime:\n" + JSON.stringify(slide.rightJson).slice(0, 200), style: { fontSize: 9 } })
+  if (slide.footer) els.push({ type: "text", content: String(slide.footer), style: { italic: true, fontSize: 10 } })
 
   if (Array.isArray(slide.bullets)) {
     els.push({ type: "list", items: slide.bullets })
   }
-  if (Array.isArray(slide.items)) {
+  if (Array.isArray(slide.items) && !slide.left) {
     els.push({ type: "list", items: slide.items })
   }
 
-  if (Array.isArray(slide.stats)) {
-    for (const st of slide.stats as Record<string, unknown>[]) {
-      els.push({
-        type: "stat",
-        value: st.value || st.number || "",
-        label: st.label || st.name || "",
-        detail: st.detail || st.change || "",
-      })
-    }
+  if (slide.quote) {
+    els.push({ type: "quote", text: slide.quote, author: slide.author })
   }
 
   if (Array.isArray(slide.members) || Array.isArray(slide.team)) {
@@ -133,38 +206,13 @@ function extractElements(slide: Record<string, unknown>): Record<string, unknown
     })
   }
 
-  if (Array.isArray(slide.cards)) {
-    const cards = slide.cards as Record<string, unknown>[]
-    els.push({
-      type: "grid",
-      columns: Math.min(cards.length, 4),
-      items: cards.map((c) => ({
-        icon: c.icon || "",
-        title: c.title || c.name || "",
-        body: c.description || c.body || c.text || "",
-      })),
-    })
-  }
-
-  if (slide.quote) {
-    els.push({ type: "quote", text: slide.quote, author: slide.author })
-  }
-
-  if (Array.isArray(slide.headers) || Array.isArray(slide.rows)) {
-    els.push({
-      type: "table",
-      headers: slide.headers || [],
-      rows: slide.rows || [],
-    })
-  }
-
   if (slide.highlight && typeof slide.highlight === "object") {
     const hl = slide.highlight as Record<string, unknown>
     els.push({ type: "quote", text: hl.text || hl.title || "", author: hl.author })
   }
 
   if (slide.footerNote) {
-    els.push({ type: "text", content: slide.footerNote, style: { italic: true, fontSize: 11 } })
+    els.push({ type: "text", content: String(slide.footerNote), style: { italic: true, fontSize: 11 } })
   }
 
   if (Array.isArray(slide.phases)) {
@@ -184,8 +232,9 @@ function extractElements(slide: Record<string, unknown>): Record<string, unknown
     })
   }
 
+  // fallback: extract any remaining string/array values
   if (els.length === 0) {
-    const keys = Object.keys(slide).filter((k) => !["type", "layout"].includes(k))
+    const keys = Object.keys(slide).filter((k) => !["type", "layout", "background", "accent", "id"].includes(k))
     for (const key of keys.slice(0, 5)) {
       const val = slide[key]
       if (typeof val === "string") {
