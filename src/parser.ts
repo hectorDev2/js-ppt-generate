@@ -1,15 +1,14 @@
-import type { PresentationSchema, DocumentNodeTree } from "./schema/types.js"
-import { validate } from "./schema/validator.js"
+import type { DocumentNodeTree } from "./schema/types.js"
+import { normalize, validate } from "./schema/validator.js"
 import { compile } from "./engine/runtime.js"
 
 export interface ParseResult {
   dnt: DocumentNodeTree | null
   errors: string[]
   warnings: string[]
-  raw: string
 }
 
-export function parse(input: string): ParseResult {
+export function parse(input: string, sourceLabel?: string): ParseResult {
   const errors: string[] = []
   const warnings: string[] = []
 
@@ -17,19 +16,25 @@ export function parse(input: string): ParseResult {
   try {
     parsed = JSON.parse(input)
   } catch (e) {
-    return { dnt: null, errors: [`JSON inválido: ${(e as Error).message}`], warnings: [], raw: input }
+    return { dnt: null, errors: [`${sourceLabel || "JSON"} inválido: ${(e as Error).message}`], warnings: [] }
   }
 
-  const validation = validate(parsed)
+  if (typeof parsed !== "object" || parsed === null) {
+    return { dnt: null, errors: ["El input debe ser un objeto JSON"], warnings: [] }
+  }
+
+  const normalized = normalize(parsed as Record<string, unknown>)
+
+  const validation = validate(normalized)
   errors.push(...validation.errors)
   warnings.push(...validation.warnings)
 
   if (!validation.valid) {
-    return { dnt: null, errors, warnings, raw: input }
+    return { dnt: null, errors, warnings }
   }
 
-  const result = compile(parsed as PresentationSchema)
+  const result = compile(normalized as any)
   warnings.push(...result.warnings)
 
-  return { dnt: result.dnt, errors, warnings, raw: input }
+  return { dnt: result.dnt, errors, warnings }
 }

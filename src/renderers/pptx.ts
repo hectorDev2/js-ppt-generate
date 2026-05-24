@@ -11,14 +11,14 @@ export async function renderPptx(dnt: DocumentNodeTree): Promise<any> {
     s.background = { color: slide.background || "FFFFFF" }
 
     for (const el of slide.elements) {
-      renderElement(s, el, pres)
+      renderElement(s, el, pres, dnt.theme)
     }
   }
 
   return pres
 }
 
-function renderElement(s: any, el: ElementNode, pres: any): void {
+function renderElement(s: any, el: ElementNode, pres: any, theme?: any): void {
   const { x, y, w, h } = el.computed
   const st = el.style
 
@@ -182,7 +182,6 @@ function renderElement(s: any, el: ElementNode, pres: any): void {
             s.addImage({ path: c.src, x, y, w, h })
           }
         } catch {
-          // fallback: render placeholder
           s.addShape(pres.shapes.RECTANGLE, {
             x, y, w, h,
             fill: { color: "EEEEEE" },
@@ -193,5 +192,107 @@ function renderElement(s: any, el: ElementNode, pres: any): void {
       }
       break
     }
+
+    case "label":
+      s.addText(String(el.content), {
+        x, y, w, h,
+        fontSize: st.fontSize,
+        color: st.color,
+        bold: true,
+        fontFace: st.fontFace,
+        align: st.align as any,
+        margin: 0,
+      })
+      break
+
+    case "cards": {
+      const cards = (el.content as any)?.items || []
+      const cols = (el.content as any)?.columns || 2
+      const cw = w / cols
+      cards.forEach((card: any, i: number) => {
+        const cx = x + (i % cols) * cw
+        const cy = y + Math.floor(i / cols) * 1.1
+        s.addShape(pres.shapes.RECTANGLE, {
+          x: cx, y: cy, w: cw - 0.15, h: 1.0,
+          fill: { color: st.bgColor || "F0F0F0" },
+          line: { color: st.color || "CCCCCC", width: 0.5 },
+        })
+        if (card.title) {
+          s.addText(card.title, {
+            x: cx + 0.1, y: cy + 0.05, w: cw - 0.35, h: 0.3,
+            fontSize: st.fontSize + 2, bold: true, color: st.color, fontFace: st.fontFace, margin: 0,
+          })
+        }
+        if (card.body) {
+          s.addText(card.body, {
+            x: cx + 0.1, y: cy + 0.4, w: cw - 0.35, h: 0.55,
+            fontSize: st.fontSize - 2, color: st.color, fontFace: st.fontFace, margin: 0,
+          })
+        }
+      })
+      break
+    }
+
+    case "column": {
+      const colEls = (el.content as any)?.elements || []
+      let cy = y + 0.15
+      for (const child of colEls) {
+        const childNode: ElementNode = {
+          type: child.type || "text",
+          computed: {
+            x: x + 0.1, y: cy, w: w - 0.2, h: 0.4,
+          },
+          style: resolveStyle(child.style || {}, theme),
+          content: child.content || child.text || "",
+        }
+        renderElement(s, childNode, pres, theme)
+        cy += 0.5
+      }
+      break
+    }
+
+    case "flow": {
+      const nodes = (el.content as any)?.nodes || []
+      s.addText(
+        nodes.map((n: any, i: number) => ({
+          text: n.label + (n.sublabel ? " (" + n.sublabel + ")" : ""),
+          options: { bullet: true, breakLine: true, paraSpaceAfter: 4 },
+        })),
+        { x, y, w, h, fontSize: st.fontSize, color: st.color, fontFace: st.fontFace, valign: "top", margin: 0 },
+      )
+      break
+    }
+
+    case "timeline": {
+      const items = (el.content as any)?.items || []
+      s.addText(
+        items.map((t: any, i: number) => ({
+          text: (t.phase || "") + " — " + (t.title || "") + (t.period ? " (" + t.period + ")" : ""),
+          options: { bullet: true, breakLine: true, paraSpaceAfter: 4 },
+        })),
+        { x, y, w, h, fontSize: st.fontSize, color: st.color, fontFace: st.fontFace, valign: "top", margin: 0 },
+      )
+      break
+    }
+
+    case "divider":
+      s.addShape(pres.shapes.RECTANGLE, {
+        x, y, w, h,
+        fill: { color: st.bgColor || "E0E0E0" },
+        line: { type: "none" },
+      })
+      break
+  }
+}
+
+function resolveStyle(style: any, theme: any): any {
+  return {
+    fontSize: style?.fontSize || 14,
+    color: style?.color || (theme?.colors?.text || "333333"),
+    bold: style?.bold || false,
+    italic: style?.italic || false,
+    fontFace: style?.fontFace || "Calibri",
+    align: style?.align || "left",
+    bgColor: style?.bgColor || "",
   }
 }

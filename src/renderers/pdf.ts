@@ -177,6 +177,72 @@ function renderElement(doc: any, el: ElementNode): void {
       }
       break
     }
+
+    case "label": {
+      const [lr, lg, lb] = hexToRgb(st.color)
+      doc.setFontSize(st.fontSize)
+      doc.setFont(st.fontFace, "bold")
+      doc.setTextColor(lr, lg, lb)
+      doc.text(String(el.content), x + 2, y + st.fontSize * PT_TO_MM)
+      break
+    }
+
+    case "cards": {
+      const cards = (el.content as any)?.items || []
+      const cols = (el.content as any)?.columns || 2
+      const cw = w / cols
+      cards.forEach((card: any, i: number) => {
+        const cx = x + (i % cols) * cw
+        const cy = y + Math.floor(i / cols) * 30
+        const [cr, cg, cb] = hexToRgb(st.bgColor || "F0F0F0")
+        doc.setFillColor(cr, cg, cb)
+        doc.rect(cx, cy, cw - 4, 25, "F")
+        if (card.title) {
+          doc.setFontSize(st.fontSize + 2)
+          doc.setFont(st.fontFace, "bold")
+          const [tr, tg, tb] = hexToRgb(st.color)
+          doc.setTextColor(tr, tg, tb)
+          doc.text(card.title, cx + 2, cy + 5)
+        }
+        if (card.body) {
+          doc.setFontSize(st.fontSize - 2)
+          doc.setFont(st.fontFace, "normal")
+          const [br, bg, bb] = hexToRgb(st.color)
+          doc.setTextColor(br, bg, bb)
+          doc.text(card.body, cx + 2, cy + 12)
+        }
+      })
+      break
+    }
+
+    case "flow": {
+      const nodes = (el.content as any)?.nodes || []
+      doc.setFontSize(st.fontSize)
+      doc.setFont(st.fontFace, "normal")
+      const [fr, fg, fb] = hexToRgb(st.color)
+      doc.setTextColor(fr, fg, fb)
+      let ly = y + st.fontSize * 1.2 * PT_TO_MM
+      for (const n of nodes) {
+        doc.text("\u2022  " + (n.label || ""), x + 2, ly)
+        ly += st.fontSize * 1.4 * PT_TO_MM
+      }
+      break
+    }
+
+    case "timeline": {
+      const items = (el.content as any)?.items || []
+      doc.setFontSize(st.fontSize)
+      doc.setFont(st.fontFace, "normal")
+      const [tr, tg, tb] = hexToRgb(st.color)
+      doc.setTextColor(tr, tg, tb)
+      let ly = y + st.fontSize * 1.2 * PT_TO_MM
+      for (const t of items) {
+        const txt = (t.phase || "") + " \u2014 " + (t.title || "")
+        doc.text("\u2022  " + txt, x + 2, ly)
+        ly += st.fontSize * 1.4 * PT_TO_MM
+      }
+      break
+    }
   }
 }
 

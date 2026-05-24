@@ -15,7 +15,9 @@ const PAD = 0.4
 export function compile(schema: PresentationSchema): CompileResult {
   const warnings: string[] = []
   const theme = resolveTheme(schema.theme)
-  const bgColor = resolveColor("background", theme)
+  const raw = schema as unknown as Record<string, unknown>
+  const meta = raw.meta as Record<string, unknown> | undefined
+  const docTitle = (raw.title as string) || (meta?.title as string) || "Presentation"
 
   const slides: SlideNode[] = schema.slides.map((slideDef, i) => {
     return compileSlide(slideDef, i, theme, warnings)
@@ -25,10 +27,10 @@ export function compile(schema: PresentationSchema): CompileResult {
     dnt: {
       slides,
       theme,
-      metadata: {
-        title: "Presentation",
-        slideCount: slides.length,
-      },
+    metadata: {
+      title: docTitle,
+      slideCount: slides.length,
+    },
     },
     warnings,
   }
@@ -189,6 +191,61 @@ function elementToNode(
         style: resolveStyle({ bgColor: "border" }, theme, {}),
         content: {},
       }
+
+    case "label": {
+      const lbl = def as import("../schema/types.js").LabelDef
+      return {
+        type: "label",
+        computed: gridRect(grid, { y: currentY, h: 0.3 }),
+        style: resolveStyle(style, theme, { fontSize: 11, bold: true, color: "accent" }),
+        content: lbl.content,
+      }
+    }
+
+    case "cards": {
+      const c = def as import("../schema/types.js").CardsDef
+      const rows = Math.ceil((c.items || []).length / (c.columns || 2))
+      return {
+        type: "cards",
+        computed: gridRect(grid, { y: currentY, h: rows * 1.2 + 0.3 }),
+        style: resolveStyle(style, theme, { fontSize: 12 }),
+        content: { items: c.items, columns: c.columns || 2 },
+      }
+    }
+
+    case "column": {
+      const col = def as import("../schema/types.js").ColumnDef
+      const halfW = (SLIDE_W - PAD * 3) / 2
+      const cx = col.position === "left" ? PAD : SLIDE_W / 2 + PAD / 2
+      return {
+        type: "column",
+        computed: { x: cx, y: currentY, w: halfW, h: 2.5 },
+        style: resolveStyle(style, theme, {}),
+        content: { elements: col.elements, position: col.position },
+      }
+    }
+
+    case "flow": {
+      const fl = def as import("../schema/types.js").FlowDef
+      const nodes = fl.nodes || []
+      return {
+        type: "flow",
+        computed: gridRect(grid, { y: currentY, h: nodes.length * 0.6 + 0.3 }),
+        style: resolveStyle(style, theme, { fontSize: 12 }),
+        content: { nodes: fl.nodes },
+      }
+    }
+
+    case "timeline": {
+      const tl = def as import("../schema/types.js").TimelineDef
+      const phases = tl.items || []
+      return {
+        type: "timeline",
+        computed: gridRect(grid, { y: currentY, h: phases.length * 0.6 + 0.3 }),
+        style: resolveStyle(style, theme, { fontSize: 11 }),
+        content: { items: tl.items },
+      }
+    }
 
     default:
       warnings.push(`slide #${slideIdx + 1}: tipo '${(def as any).type}' ignorado`)

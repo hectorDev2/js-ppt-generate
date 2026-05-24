@@ -26,6 +26,7 @@ export type ElementDef =
   | HeadingDef | TextDef | ImageDef
   | ListDef | TableDef | ShapeDef
   | GridDef | StatDef | QuoteDef | DividerDef
+  | LabelDef | CardsDef | ColumnDef | FlowDef | TimelineDef
 
 export interface BaseElement {
   style?: Partial<ElementStyle>
@@ -113,6 +114,46 @@ export interface QuoteDef extends BaseElement {
 
 export interface DividerDef extends BaseElement {
   type: "divider"
+}
+
+export interface LabelDef extends BaseElement {
+  type: "label"
+  content: string
+}
+
+export interface CardsDef extends BaseElement {
+  type: "cards"
+  columns?: number
+  items: GridItem[]
+}
+
+export interface ColumnDef extends BaseElement {
+  type: "column"
+  position: "left" | "right"
+  elements: ElementDef[]
+}
+
+export interface FlowDef extends BaseElement {
+  type: "flow"
+  nodes: FlowNode[]
+}
+
+export interface FlowNode {
+  id: string
+  label: string
+  sublabel?: string
+}
+
+export interface TimelineDef extends BaseElement {
+  type: "timeline"
+  items: TimelineItem[]
+}
+
+export interface TimelineItem {
+  phase: string
+  period: string
+  title: string
+  items: string[]
 }
 
 // ── Document Node Tree (Resolved Runtime) ────────────────────
