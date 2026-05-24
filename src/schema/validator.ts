@@ -75,177 +75,116 @@ function normalizeSlide(slide: unknown): Record<string, unknown> {
 
 function extractElements(slide: Record<string, unknown>): Record<string, unknown>[] {
   const els: Record<string, unknown>[] = []
-  const slideType = (slide.type as string) || ""
+  const skipKeys = ["type", "layout", "id", "background", "accent"]
 
-  if (slide.title) {
-    els.push({ type: "heading", level: 1, content: slide.title })
-  }
-  if (slide.subtitle) {
-    els.push({ type: "heading", level: 2, content: slide.subtitle })
-  }
+  // ── Title / subtitle ──────────────────────────────────────
+  if (slide.title) els.push({ type: "heading", level: 1, content: slide.title })
+  if (slide.subtitle) els.push({ type: "heading", level: 2, content: slide.subtitle })
 
-  // comparison: left / right
-  if (slide.left && typeof slide.left === "object") {
-    const l = slide.left as Record<string, unknown>
-    const r = slide.right as Record<string, unknown>
-    els.push({ type: "heading", level: 2, content: "Tradicional", style: { fontSize: 14 } })
-    if (Array.isArray(l.items)) {
-      els.push({ type: "list", items: l.items.map((i: unknown) => String(i)) })
+  // ── Iterate ALL remaining keys ────────────────────────────
+  for (const key of Object.keys(slide)) {
+    if (skipKeys.includes(key)) continue
+    if (key === "title" || key === "subtitle") continue
+
+    const val = slide[key]
+
+    // ── String values ───────────────────────────────────────
+    if (typeof val === "string") {
+      els.push({ type: "text", content: val })
+      continue
     }
-    els.push({ type: "heading", level: 2, content: "AI Runtime", style: { fontSize: 14 } })
-    if (r && Array.isArray(r.items)) {
-      els.push({ type: "list", items: r.items.map((i: unknown) => String(i)) })
-    }
-  }
 
-  // chart
-  if (slide.chart && typeof slide.chart === "object") {
-    const ch = slide.chart as Record<string, unknown>
-    const labels = (ch.labels || []) as string[]
-    const values = (ch.values || []) as number[]
-    if (labels.length > 0) {
-      els.push({
-        type: "table",
-        headers: ["Métrica", "Tokens"],
-        rows: labels.map((l, i) => [l, String(values[i] || "")]),
-      })
-    }
-  }
+    // ── Array of strings ────────────────────────────────────
+    if (Array.isArray(val)) {
+      if (val.length === 0) continue
 
-  // stats with cards
-  if (Array.isArray(slide.cards)) {
-    els.push({
-      type: "grid",
-      columns: Math.min((slide.cards as unknown[]).length, 3),
-      items: (slide.cards as Record<string, unknown>[]).map((c) => ({
-        title: c.title || "",
-        body: (c.value || "") + (c.description ? " — " + c.description : ""),
-      })),
-    })
-  }
+      const first = val[0]
+      // Array of objects → try grid or stat
+      if (typeof first === "object" && first !== null) {
+        const isStat = "value" in first || "number" in first
+        const hasTitle = "title" in first || "name" in first
+        const hasDesc = "description" in first || "desc" in first || "body" in first
 
-  // steps / diagram / workflow
-  if (Array.isArray(slide.steps)) {
-    els.push({ type: "list", items: (slide.steps as string[]).map((s) => String(s)) })
-  }
-  if (Array.isArray(slide.diagram)) {
-    els.push({ type: "list", items: (slide.diagram as string[]).map((d) => String(d)) })
-  }
-
-  // features array
-  if (Array.isArray(slide.features)) {
-    els.push({
-      type: "grid",
-      columns: Math.min((slide.features as unknown[]).length, 4),
-      items: (slide.features as Record<string, unknown>[]).map((f) => ({
-        title: f.title || "",
-        body: f.description || f.body || "",
-      })),
-    })
-  }
-
-  // segments
-  if (Array.isArray(slide.segments)) {
-    els.push({ type: "list", items: (slide.segments as string[]).map((s) => String(s)) })
-  }
-
-  // comparison stats blocks
-  if (Array.isArray(slide.stats)) {
-    for (const st of slide.stats as Record<string, unknown>[]) {
-      els.push({
-        type: "stat",
-        value: st.value || st.number || "",
-        label: st.label || st.name || "",
-        detail: st.detail || st.change || "",
-      })
-    }
-  }
-
-  if (slide.paragraph) {
-    els.push({ type: "text", content: slide.paragraph })
-  }
-  if (slide.content) {
-    const content = slide.content
-    if (typeof content === "string") {
-      els.push({ type: "text", content })
-    } else if (Array.isArray(content)) {
-      els.push({
-        type: "list",
-        items: content.map((c: unknown) => (typeof c === "string" ? c : JSON.stringify(c))),
-      })
-    }
-  }
-  if (slide.body) els.push({ type: "text", content: slide.body })
-  if (slide.description && !slide.content) els.push({ type: "text", content: slide.description })
-
-  // leftCode / rightJson (code examples)
-  if (slide.leftCode) els.push({ type: "text", content: "Código tradicional:\n" + String(slide.leftCode).slice(0, 200), style: { fontSize: 9 } })
-  if (slide.rightJson) els.push({ type: "text", content: "JSON Runtime:\n" + JSON.stringify(slide.rightJson).slice(0, 200), style: { fontSize: 9 } })
-  if (slide.footer) els.push({ type: "text", content: String(slide.footer), style: { italic: true, fontSize: 10 } })
-
-  if (Array.isArray(slide.bullets)) {
-    els.push({ type: "list", items: slide.bullets })
-  }
-  if (Array.isArray(slide.items) && !slide.left) {
-    els.push({ type: "list", items: slide.items })
-  }
-
-  if (slide.quote) {
-    els.push({ type: "quote", text: slide.quote, author: slide.author })
-  }
-
-  if (Array.isArray(slide.members) || Array.isArray(slide.team)) {
-    const members = (slide.members || slide.team) as Record<string, unknown>[]
-    els.push({
-      type: "grid",
-      columns: Math.min(members.length, 3),
-      items: members.map((m) => ({
-        title: m.name || m.title || "",
-        body: (m.role || "") + (m.bio ? " · " + m.bio : ""),
-      })),
-    })
-  }
-
-  if (slide.highlight && typeof slide.highlight === "object") {
-    const hl = slide.highlight as Record<string, unknown>
-    els.push({ type: "quote", text: hl.text || hl.title || "", author: hl.author })
-  }
-
-  if (slide.footerNote) {
-    els.push({ type: "text", content: String(slide.footerNote), style: { italic: true, fontSize: 11 } })
-  }
-
-  if (Array.isArray(slide.phases)) {
-    els.push({
-      type: "list",
-      items: (slide.phases as Record<string, unknown>[]).map(
-        (p) => (p.phase || p.name || "") + " (" + (p.period || "") + ")",
-      ),
-    })
-  }
-
-  if (Array.isArray(slide.events) || Array.isArray(slide.timeline)) {
-    const events = (slide.events || slide.timeline) as Record<string, unknown>[]
-    els.push({
-      type: "list",
-      items: events.map((e) => (e.date || "") + " — " + (e.title || e.name || "")),
-    })
-  }
-
-  // fallback: extract any remaining string/array values
-  if (els.length === 0) {
-    const keys = Object.keys(slide).filter((k) => !["type", "layout", "background", "accent", "id"].includes(k))
-    for (const key of keys.slice(0, 5)) {
-      const val = slide[key]
-      if (typeof val === "string") {
-        els.push({ type: "text", content: val })
-      } else if (Array.isArray(val) && val.length > 0) {
+        if (isStat) {
+          // stats array: [{ value, label, description }]
+          for (const item of val as Record<string, unknown>[]) {
+            els.push({
+              type: "stat",
+              value: String(item.value ?? item.number ?? ""),
+              label: String(item.label ?? item.name ?? ""),
+              detail: String(item.detail ?? item.description ?? item.change ?? ""),
+            })
+          }
+        } else {
+          // Array of objects → grid/cards
+          els.push({
+            type: "grid",
+            columns: Math.min(val.length, 4),
+            items: (val as Record<string, unknown>[]).map((item) => ({
+              icon: String(item.icon ?? item.emoji ?? ""),
+              title: String(item.title ?? item.name ?? item.phase ?? ""),
+              body: String(item.description ?? item.desc ?? item.body ?? item.period ?? item.value ?? ""),
+            })),
+          })
+        }
+      } else {
+        // Array of primitives → list
         els.push({
           type: "list",
           items: val.map((v: unknown) => (typeof v === "string" ? v : JSON.stringify(v))),
         })
       }
+      continue
     }
+
+    // ── Object values ───────────────────────────────────────
+    if (typeof val === "object" && val !== null) {
+      const obj = val as Record<string, unknown>
+
+      // chart: { type, labels, values }
+      if ("labels" in obj || "values" in obj) {
+        const labels = (obj.labels as string[]) || []
+        const values = (obj.values as number[]) || []
+        if (labels.length > 0) {
+          els.push({
+            type: "table",
+            headers: ["Ítem", "Valor"],
+            rows: labels.map((l, i) => [String(l), String(values[i] ?? "")]),
+          })
+        }
+        continue
+      }
+
+      // left/right (comparison)
+      if (key === "left" || key === "right") {
+        const label = key === "left" ? "Tradicional" : "Runtime"
+        if (obj.title) els.push({ type: "heading", level: 2, content: String(obj.title), style: { fontSize: 13 } })
+        if (Array.isArray(obj.items)) {
+          els.push({
+            type: "list",
+            items: (obj.items as unknown[]).map((i: unknown) => String(i)),
+          })
+        }
+        continue
+      }
+
+      // Nested object with content key → text
+      if (obj.content && typeof obj.content === "string") {
+        els.push({ type: "text", content: obj.content })
+        continue
+      }
+
+      // Default: stringify first 200 chars
+      const str = JSON.stringify(obj)
+      if (str.length > 3) {
+        els.push({ type: "text", content: str.slice(0, 300) })
+      }
+    }
+  }
+
+  // ── Quote (if present) ───────────────────────────────────
+  if (slide.quote) {
+    els.push({ type: "quote", text: String(slide.quote), author: slide.author ? String(slide.author) : undefined })
   }
 
   return els
