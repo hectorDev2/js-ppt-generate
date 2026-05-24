@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>PPTX Generator</title>
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+
+<header>
+  <h1>PPTX Generator</h1>
+  <span>JS → Presentación</span>
+</header>
+
+<div class="main">
+  <div class="editor-panel">
+    <div id="editor" class="editor-container"></div>
+    <div class="controls">
+      <button class="btn-run" id="runBtn">▶ Generar</button>
+      <button class="btn-dl" id="pptxBtn" disabled>⬇ PPTX</button>
+      <button class="btn-dl" id="pdfBtn" disabled>⬇ PDF</button>
+    </div>
+  </div>
+  <div class="log-panel" id="logPanel">
+    <div class="log-header">Logs</div>
+    <div id="logOutput" class="log-output">
+      <div class="log-empty">Presioná <strong>Generar</strong> para ejecutar el script</div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
