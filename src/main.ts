@@ -1,14 +1,18 @@
-import { SAMPLE_CHATGPT_PPT } from "./lib/samples.js"
-import { executeCode, generatePdfFromLastPres, getLastPres } from "./modes/library.js"
+import { SAMPLE_PRESENTATION } from "./lib/samples.js"
+import { parse, type ParseResult } from "./parser.js"
+import { renderPptx } from "./renderers/pptx.js"
+import { renderPdf } from "./renderers/pdf.js"
 import { getState, setProcessing, addLog, clearLogs } from "./state.js"
+import type { DocumentNodeTree } from "./schema/types.js"
 
 let editor: import("monaco-editor").editor.IStandaloneCodeEditor | null = null
+let lastDnt: DocumentNodeTree | null = null
 
 async function createEditor(container: HTMLElement): Promise<void> {
   const monaco = await import("monaco-editor")
   editor = monaco.editor.create(container, {
-    value: SAMPLE_CHATGPT_PPT,
-    language: "javascript",
+    value: SAMPLE_PRESENTATION,
+    language: "json",
     theme: "vs-dark",
     fontSize: 13,
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
@@ -25,13 +29,13 @@ function getCode(): string {
   return editor?.getValue() || ""
 }
 
-async function handleRun(): Promise<void> {
+async function handleCompile(): Promise<void> {
   const code = getCode()
   if (!code.trim()) return
 
   clearLogs()
+  lastDnt = null
 
-  const logEl = document.getElementById("logOutput")!
   const runBtn = document.getElementById("runBtn") as HTMLButtonElement
   const pptxBtn = document.getElementById("pptxBtn") as HTMLButtonElement
   const pdfBtn = document.getElementById("pdfBtn") as HTMLButtonElement
@@ -39,40 +43,42 @@ async function handleRun(): Promise<void> {
   runBtn.disabled = true
   pptxBtn.disabled = true
   pdfBtn.disabled = true
-  runBtn.textContent = "⏳ Generando..."
-  logEl.innerHTML = ""
+  runBtn.textContent = "⏳ Compilando..."
+  document.getElementById("logOutput")!.innerHTML = ""
 
   setProcessing(true)
 
-  try {
-    await executeCode(code, true)
+  const result = parse(code)
+  for (const w of result.warnings) addLog("⚠ " + w, "info")
+  for (const e of result.errors) addLog("✗ " + e, "error")
 
+  if (result.dnt) {
+    lastDnt = result.dnt
+    addLog("✅ JSON compilado · " + result.dnt.slides.length + " slides", "success")
     pptxBtn.disabled = false
     pdfBtn.disabled = false
-  } catch (e) {
-    addLog("Error: " + (e as Error).message, "error")
+  } else {
+    addLog("❌ Error de compilaci\u00f3n", "error")
   }
 
   renderLogs()
   setProcessing(false)
   runBtn.disabled = false
-  runBtn.textContent = "▶ Generar"
+  runBtn.textContent = "▶ Compilar"
 }
 
 async function handlePptx(): Promise<void> {
-  const pres = getLastPres()
-  if (!pres) return
-
+  if (!lastDnt) return
   const btn = document.getElementById("pptxBtn") as HTMLButtonElement
   btn.disabled = true
   btn.textContent = "⏳ PPTX..."
 
   try {
-    const writeFile = pres._origWriteFile || pres.writeFile
-    await writeFile({ fileName: "presentacion.pptx" })
+    const pres = await renderPptx(lastDnt)
+    await pres.writeFile({ fileName: "presentacion.pptx" })
     addLog("✅ PPTX descargado", "success")
   } catch (e) {
-    addLog("Error al descargar PPTX: " + (e as Error).message, "error")
+    addLog("Error: " + (e as Error).message, "error")
   }
 
   renderLogs()
@@ -81,12 +87,13 @@ async function handlePptx(): Promise<void> {
 }
 
 async function handlePdf(): Promise<void> {
+  if (!lastDnt) return
   const btn = document.getElementById("pdfBtn") as HTMLButtonElement
   btn.disabled = true
   btn.textContent = "⏳ PDF..."
 
-  const blob = await generatePdfFromLastPres()
-  if (blob) {
+  try {
+    const blob = await renderPdf(lastDnt)
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
@@ -95,6 +102,9 @@ async function handlePdf(): Promise<void> {
     a.click()
     document.body.removeChild(a)
     setTimeout(() => URL.revokeObjectURL(url), 10000)
+    addLog("✅ PDF descargado", "success")
+  } catch (e) {
+    addLog("Error: " + (e as Error).message, "error")
   }
 
   renderLogs()
@@ -123,7 +133,7 @@ async function init(): Promise<void> {
   const editorEl = document.getElementById("editor")!
   await createEditor(editorEl)
 
-  document.getElementById("runBtn")!.addEventListener("click", handleRun)
+  document.getElementById("runBtn")!.addEventListener("click", handleCompile)
   document.getElementById("pptxBtn")!.addEventListener("click", handlePptx)
   document.getElementById("pdfBtn")!.addEventListener("click", handlePdf)
 }
