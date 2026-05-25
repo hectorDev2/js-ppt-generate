@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>JS PPT Generator</title>
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+
+<header>
+  <h1>JS PPT Generator</h1>
+  <span>Ejecuta c&oacute;digo pptxgenjs</span>
+  <nav class="nav-links">
+    <a href="/index.html">JSON Mode</a>
+  </nav>
+</header>
+
+<div class="main">
+  <div class="editor-panel">
+    <div id="editor" class="editor-container"></div>
+    <div class="controls">
+      <button class="btn-run" id="runBtn">▶ Ejecutar JS</button>
+      <button class="btn-dl" id="pptxBtn" disabled>⬇ PPTX</button>
+      <button class="btn-dl" id="pdfBtn" disabled>⬇ PDF</button>
+    </div>
+  </div>
+  <div class="log-panel" id="logPanel">
+    <div class="log-header">Logs</div>
+    <div id="logOutput" class="log-output">
+      <div class="log-empty">Peg&aacute; c&oacute;digo pptxgenjs y presion&aacute; <strong>Ejecutar JS</strong></div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/main-js.ts"></script>
+</body>
+</html>
