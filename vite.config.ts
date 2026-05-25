@@ -4,6 +4,10 @@ export default defineConfig({
   build: {
     target: "es2020",
     rollupOptions: {
+      input: {
+        main: "index.html",
+        js: "js.html",
+      },
       output: {
         manualChunks: {
           monaco: ["monaco-editor"],
