@@ -20,7 +20,11 @@ export async function renderPdf(dnt: DocumentNodeTree): Promise<Blob> {
     doc.rect(0, 0, 254, 143, "F")
 
     for (const el of slide.elements) {
-      renderElement(doc, el)
+      try {
+        renderElement(doc, el)
+      } catch (e) {
+        console.warn("PDF render error:", el.type, (e as Error).message)
+      }
     }
   }
 
@@ -51,7 +55,7 @@ function renderElement(doc: any, el: ElementNode): void {
 
     case "list": {
       const c = el.content as any
-      const items: string[] = Array.isArray(c?.items) ? c.items : []
+      const items: string[] = Array.isArray(c) ? c : (Array.isArray(c?.items) ? c.items : [])
       doc.setFontSize(st.fontSize)
       doc.setFont(st.fontFace, "normal")
       const [r, g, b] = hexToRgb(st.color)
@@ -222,10 +226,13 @@ function renderElement(doc: any, el: ElementNode): void {
       const [fr, fg, fb] = hexToRgb(st.color)
       doc.setTextColor(fr, fg, fb)
       let ly = y + st.fontSize * 1.2 * PT_TO_MM
-      for (const n of nodes) {
-        doc.text("\u2022  " + (n.label || ""), x + 2, ly)
+      function drawFlow(n: any, depth: number) {
+        const prefix = depth > 0 ? "    " : "\u2022  "
+        doc.text(prefix + (n.label || "") + (n.sublabel ? " \u2014 " + n.sublabel : ""), x + 2, ly)
         ly += st.fontSize * 1.4 * PT_TO_MM
+        if (Array.isArray(n.nodes)) n.nodes.forEach((child: any) => drawFlow(child, depth + 1))
       }
+      nodes.forEach((n: any) => drawFlow(n, 0))
       break
     }
 
@@ -237,9 +244,15 @@ function renderElement(doc: any, el: ElementNode): void {
       doc.setTextColor(tr, tg, tb)
       let ly = y + st.fontSize * 1.2 * PT_TO_MM
       for (const t of items) {
-        const txt = (t.phase || "") + " \u2014 " + (t.title || "")
-        doc.text("\u2022  " + txt, x + 2, ly)
+        const header = (t.phase || "") + " \u2014 " + (t.title || "") + (t.period ? " (" + t.period + ")" : "")
+        doc.text("\u2022  " + header, x + 2, ly)
         ly += st.fontSize * 1.4 * PT_TO_MM
+        if (Array.isArray(t.items)) {
+          for (const sub of t.items) {
+            doc.text("     " + String(sub), x + 2, ly)
+            ly += st.fontSize * 1.2 * PT_TO_MM
+          }
+        }
       }
       break
     }

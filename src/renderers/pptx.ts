@@ -11,7 +11,11 @@ export async function renderPptx(dnt: DocumentNodeTree): Promise<any> {
     s.background = { color: slide.background || "FFFFFF" }
 
     for (const el of slide.elements) {
-      renderElement(s, el, pres, dnt.theme)
+      try {
+        renderElement(s, el, pres, dnt.theme)
+      } catch (e) {
+        console.warn("PPTX render error:", el.type, (e as Error).message)
+      }
     }
   }
 
@@ -41,11 +45,12 @@ function renderElement(s: any, el: ElementNode, pres: any, theme?: any): void {
 
     case "list": {
       const c = el.content as any
-      const items = Array.isArray(c.items) ? c.items.map((t: string) => ({
+      const items = Array.isArray(c) ? c : (Array.isArray(c?.items) ? c.items : [])
+      const listItems = items.length > 0 ? items.map((t: string) => ({
         text: t,
         options: { bullet: true, breakLine: true, paraSpaceAfter: 4 },
       })) : []
-      s.addText(items, {
+      s.addText(listItems, {
         x, y, w, h,
         fontSize: st.fontSize,
         color: st.color,
@@ -237,26 +242,32 @@ function renderElement(s: any, el: ElementNode, pres: any, theme?: any): void {
       const colEls = (el.content as any)?.elements || []
       let cy = y + 0.15
       for (const child of colEls) {
+        const ch = 0.6
         const childNode: ElementNode = {
           type: child.type || "text",
-          computed: {
-            x: x + 0.1, y: cy, w: w - 0.2, h: 0.4,
-          },
+          computed: { x: x + 0.1, y: cy, w: w - 0.2, h: ch },
           style: resolveStyle(child.style || {}, theme),
-          content: child.content || child.text || "",
+          content: child.content || child.text || child.items || "",
         }
         renderElement(s, childNode, pres, theme)
-        cy += 0.5
+        cy += ch + 0.1
       }
       break
     }
 
     case "flow": {
       const nodes = (el.content as any)?.nodes || []
+      const items: string[] = []
+      function flattenFlow(n: any, depth: number) {
+        const prefix = depth > 0 ? "    " : ""
+        items.push(prefix + (n.label || "") + (n.sublabel ? " \u2014 " + n.sublabel : ""))
+        if (Array.isArray(n.nodes)) n.nodes.forEach((child: any) => flattenFlow(child, depth + 1))
+      }
+      nodes.forEach((n: any) => flattenFlow(n, 0))
       s.addText(
-        nodes.map((n: any, i: number) => ({
-          text: n.label + (n.sublabel ? " (" + n.sublabel + ")" : ""),
-          options: { bullet: true, breakLine: true, paraSpaceAfter: 4 },
+        items.map((t: string) => ({
+          text: t,
+          options: { bullet: !t.startsWith(" "), breakLine: true, paraSpaceAfter: 3 },
         })),
         { x, y, w, h, fontSize: st.fontSize, color: st.color, fontFace: st.fontFace, valign: "top", margin: 0 },
       )
@@ -264,12 +275,13 @@ function renderElement(s: any, el: ElementNode, pres: any, theme?: any): void {
     }
 
     case "timeline": {
-      const items = (el.content as any)?.items || []
+      const timelineItems = (el.content as any)?.items || []
       s.addText(
-        items.map((t: any, i: number) => ({
-          text: (t.phase || "") + " — " + (t.title || "") + (t.period ? " (" + t.period + ")" : ""),
-          options: { bullet: true, breakLine: true, paraSpaceAfter: 4 },
-        })),
+        timelineItems.map((t: any) => {
+          const header = (t.phase || "") + " — " + (t.title || "") + (t.period ? " (" + t.period + ")" : "")
+          const sub = Array.isArray(t.items) ? "\n  " + t.items.join("\n  ") : ""
+          return { text: header + sub, options: { bullet: true, breakLine: true, paraSpaceAfter: 5 } }
+        }),
         { x, y, w, h, fontSize: st.fontSize, color: st.color, fontFace: st.fontFace, valign: "top", margin: 0 },
       )
       break

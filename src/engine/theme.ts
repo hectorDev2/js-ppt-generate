@@ -10,6 +10,15 @@ const DEFAULT_THEMES: Record<string, ThemeDef> = {
     },
     fonts: { heading: "Calibri", body: "Calibri" },
   },
+  "corporate-dark": {
+    name: "Corporate Dark",
+    colors: {
+      primary: "38BDF8", secondary: "1E3A5F", accent: "F87171",
+      background: "0F172A", surface: "1E293B", text: "F1F5F9",
+      textSecondary: "94A3B8", border: "334155", success: "4ADE80",
+    },
+    fonts: { heading: "Calibri", body: "Calibri" },
+  },
   "dark": {
     name: "Dark",
     colors: {
@@ -43,31 +52,46 @@ const DEFAULT_STYLE = {
 
 export function resolveTheme(themeRef: string | ThemeDef | undefined): ResolvedTheme {
   if (typeof themeRef === "object" && themeRef) {
-    return expandTheme(themeRef)
+    return expandTheme(themeRef as unknown as Record<string, unknown>)
   }
   const name = typeof themeRef === "string" ? themeRef : "corporate-light"
   const builtIn = DEFAULT_THEMES[name]
-  if (builtIn) return expandTheme(builtIn)
-  return expandTheme(DEFAULT_THEMES["corporate-light"])
+  if (builtIn) return expandTheme(builtIn as unknown as Record<string, unknown>)
+  return expandTheme(DEFAULT_THEMES["corporate-light"] as unknown as Record<string, unknown>)
 }
 
-function expandTheme(t: ThemeDef): ResolvedTheme {
+function expandTheme(t: Record<string, unknown>): ResolvedTheme {
+  const colors = t.colors as Record<string, string> | undefined
+  const c: Record<string, string> = colors ? { ...colors } : {}
+
+  if (Object.keys(c).length === 0 && t.primaryColor) {
+    c.primary = t.primaryColor as string
+    c.secondary = (t.secondaryColor as string) || ""
+    c.accent = (t.accentColor as string) || ""
+    c.background = (t.backgroundColor as string) || "FFFFFF"
+    c.text = (t.textColor as string) || (t.color as string) || "333333"
+    c.surface = (t.surfaceColor as string) || ""
+    c.textSecondary = (t.textSecondaryColor as string) || ""
+    c.border = (t.borderColor as string) || ""
+  }
+
+  const fonts = t.fonts as Record<string, string> | undefined || {}
+
   return {
     colors: {
-      primary: t.colors.primary || "1A5276",
-      secondary: t.colors.secondary || "2E86C1",
-      accent: t.colors.accent || "F39C12",
-      background: t.colors.background || "FFFFFF",
-      surface: t.colors.surface || "F8F9FA",
-      text: t.colors.text || "2C3E50",
-      textSecondary: t.colors.textSecondary || "7F8C8D",
-      border: t.colors.border || "E0E0E0",
-      success: t.colors.success || "27AE60",
-      ...t.colors,
+      primary: c.primary || "1A5276",
+      secondary: c.secondary || "2E86C1",
+      accent: c.accent || "F39C12",
+      background: c.background || "FFFFFF",
+      surface: c.surface || "F8F9FA",
+      text: c.text || "2C3E50",
+      textSecondary: c.textSecondary || "7F8C8D",
+      border: c.border || "E0E0E0",
+      success: c.success || "27AE60",
     },
     fonts: {
-      heading: t.fonts?.heading || "Calibri",
-      body: t.fonts?.body || "Calibri",
+      heading: fonts.heading || "Calibri",
+      body: fonts.body || "Calibri",
     },
   }
 }
@@ -86,27 +110,31 @@ export function resolveStyle(
   fontFace: string
   padding: number
 } {
-  const base = { ...DEFAULT_STYLE, ...defaults }
-
-  const colorRef = elementStyle?.color as string || base.color
-  const bgRef = elementStyle?.bgColor as string || base.bgColor
-
-  return {
-    color: resolveColor(colorRef, resolvedTheme),
-    bgColor: bgRef === "transparent" ? "" : resolveColor(bgRef, resolvedTheme),
-    fontSize: (elementStyle?.fontSize as number) || base.fontSize,
-    bold: (elementStyle?.bold as boolean) || base.bold,
-    italic: (elementStyle?.italic as boolean) || base.italic,
-    align: (elementStyle?.align as "left" | "center" | "right") || base.align,
-    fontFace: resolveFont((elementStyle?.fontFace as string) || base.fontFace, resolvedTheme),
-    padding: (elementStyle?.padding as number) || base.padding,
+  try {
+    const base = { ...DEFAULT_STYLE, ...defaults }
+    const colorRef = (elementStyle?.color as string) || base.color
+    const bgRef = (elementStyle?.bgColor as string) || base.bgColor
+    return {
+      color: resolveColor(colorRef, resolvedTheme),
+      bgColor: bgRef === "transparent" ? "" : resolveColor(bgRef, resolvedTheme),
+      fontSize: (elementStyle?.fontSize as number) || base.fontSize,
+      bold: (elementStyle?.bold as boolean) || base.bold,
+      italic: (elementStyle?.italic as boolean) || base.italic,
+      align: (elementStyle?.align as "left" | "center" | "right") || base.align,
+      fontFace: resolveFont((elementStyle?.fontFace as string) || base.fontFace, resolvedTheme),
+      padding: (elementStyle?.padding as number) || base.padding,
+    }
+  } catch {
+    return { color: "333333", bgColor: "", fontSize: 14, bold: false, italic: false, align: "left", fontFace: "Calibri", padding: 4 }
   }
 }
 
 export function resolveColor(ref: string, theme: ResolvedTheme): string {
   if (!ref || ref === "transparent") return ""
-  if (theme.colors[ref]) return theme.colors[ref]
-  if (/^[0-9A-Fa-f]{6}$/.test(ref) || /^#[0-9A-Fa-f]{6}$/.test(ref)) return ref.replace("#", "")
+  try {
+    if (theme.colors[ref]) return theme.colors[ref]
+    if (/^[0-9A-Fa-f]{6}$/.test(ref) || /^#[0-9A-Fa-f]{6}$/.test(ref)) return ref.replace("#", "")
+  } catch {}
   return ref
 }
 
