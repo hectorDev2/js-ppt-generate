@@ -1,7 +1,51 @@
+import type { PptxInstance } from "../modes/library.js"
+
 const INCH_TO_MM = 25.4
 const PT_TO_MM = 0.3528
 
-export async function pptxToPdf(pres: any): Promise<Blob> {
+interface PptxSlideObject {
+  shape?: string
+  text?: PptxTextItem[]
+  options?: PptxObjectOptions
+}
+
+interface PptxObjectOptions {
+  x?: number
+  y?: number
+  w?: number
+  h?: number
+  fill?: { color?: string }
+  line?: { type?: string; color?: string; pt?: number }
+  fontSize?: number
+  color?: string
+  bold?: boolean
+  italic?: boolean
+  align?: "left" | "center" | "right"
+  fontFace?: string
+}
+
+interface PptxTextItem {
+  text?: string
+  options?: PptxTextItemOptions
+}
+
+interface PptxTextItemOptions {
+  fontSize?: number
+  fontFace?: string
+  bold?: boolean
+  italic?: boolean
+  color?: string
+  align?: "left" | "center" | "right"
+  bullet?: boolean
+  breakLine?: boolean
+}
+
+interface PptxSlide {
+  background?: { color?: string }
+  _slideObjects?: PptxSlideObject[]
+}
+
+export async function pptxToPdf(pres: PptxInstance): Promise<Blob> {
   const { jsPDF } = await import("jspdf")
 
   const slideW = pres.layout === "LAYOUT_WIDE" ? 13.33 : 10
@@ -11,7 +55,7 @@ export async function pptxToPdf(pres: any): Promise<Blob> {
 
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: [pdfW, pdfH] })
 
-  const slides: any[] = pres.slides || []
+  const slides = (pres.slides || []) as PptxSlide[]
 
   for (let si = 0; si < slides.length; si++) {
     if (si > 0) doc.addPage([pdfW, pdfH])
@@ -24,7 +68,7 @@ export async function pptxToPdf(pres: any): Promise<Blob> {
       doc.rect(0, 0, pdfW, pdfH, "F")
     }
 
-    const objects: any[] = slide?._slideObjects || []
+    const objects: PptxSlideObject[] = slide?._slideObjects || []
     for (const obj of objects) {
       try {
         renderObject(doc, obj)
@@ -35,7 +79,7 @@ export async function pptxToPdf(pres: any): Promise<Blob> {
   return doc.output("blob")
 }
 
-function renderObject(doc: any, obj: any): void {
+function renderObject(doc: InstanceType<typeof import("jspdf")["jsPDF"]>, obj: PptxSlideObject): void {
   const opts = obj.options || {}
   if (opts.x === undefined && opts.y === undefined) return
 
@@ -45,14 +89,14 @@ function renderObject(doc: any, obj: any): void {
   const h = mm(opts.h || 0)
   const shape = obj.shape || "rect"
 
-  const hasFill = opts.fill?.color
+  const hasFill = Boolean(opts.fill?.color)
   const lineType = opts.line?.type
   const hasLine = lineType && lineType !== "none"
   const textItems = obj.text
 
   if (hasFill || hasLine) {
     const drawMode = hasFill && hasLine ? "FD" : hasFill ? "F" : "D"
-    if (hasFill) {
+    if (hasFill && opts.fill?.color) {
       const [fr, fg, fb] = hexToRgb(opts.fill.color)
       doc.setFillColor(fr, fg, fb)
     }
@@ -72,14 +116,14 @@ function renderObject(doc: any, obj: any): void {
   }
 
   if (textItems && Array.isArray(textItems) && textItems.length > 0) {
-    const hasActualText = textItems.some((t: any) => t && (typeof t === "string" || (t.text && t.text.length > 0)))
+    const hasActualText = textItems.some((t) => t && (typeof t === "string" || (t.text && t.text.length > 0)))
     if (!hasActualText) return
 
     const defaultPt = opts.fontSize || 18
     const defaultColor = opts.color || "333333"
     const defaultBold = opts.bold || false
     const defaultItalic = opts.italic || false
-    const defaultAlign = opts.align || "left"
+    const defaultAlign: "left" | "center" | "right" = opts.align || "left"
     const defaultFont = opts.fontFace || "helvetica"
 
     let cursorX = x + 2
@@ -89,7 +133,7 @@ function renderObject(doc: any, obj: any): void {
     for (const item of textItems) {
       if (!item) continue
       let txt: string
-      let itemOpts: any
+      let itemOpts: PptxTextItemOptions
       if (typeof item === "string") { txt = item; itemOpts = {} }
       else { txt = item.text || ""; itemOpts = item.options || {} }
       if (!txt) continue

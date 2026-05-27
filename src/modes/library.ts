@@ -1,35 +1,50 @@
+import type PptxGenJS from "pptxgenjs"
 import { addLog, clearLogs } from "../state.js"
 import { pptxToPdf } from "../lib/pptx-to-pdf.js"
 
-let lastPres: any = null
+export interface PptxInstance {
+  layout: string
+  slides: unknown[]
+  writeFile(props?: PptxGenJS.WriteFileProps): Promise<string>
+  addSlide(): PptxGenJS.Slide
+  _origWriteFile?: (props?: PptxGenJS.WriteFileProps) => Promise<string>
+}
 
-export function getLastPres(): any {
+let lastPres: PptxInstance | null = null
+
+export function getLastPres(): PptxInstance | null {
   return lastPres
 }
+
+type JsExecutor = (requireFn: (name: string) => unknown, console: Console, process: Record<string, unknown>) => unknown
 
 export async function executeJsCode(code: string): Promise<void> {
   clearLogs()
   addLog("Ejecutando JS...", "info")
   lastPres = null
 
-  const PptxGenJS = (await import("pptxgenjs")).default
+  const PptxGenJSModule = await import("pptxgenjs")
+  const PptxGenJSCtor = PptxGenJSModule.default as typeof PptxGenJS
 
-  const WrappedPptxGen = function (this: any, ...args: unknown[]) {
-    const instance = new (PptxGenJS as any)(...args)
+  const WrappedPptxGen = function (this: PptxInstance, ...args: ConstructorParameters<typeof PptxGenJS>) {
+    const instance = new PptxGenJSCtor(...args) as unknown as PptxInstance
 
-    // Patch: fix addText with plain string arrays + breakLine
-    const origAddSlide = instance.addSlide.bind(instance)
-    instance.addSlide = function () {
+    const origAddSlide = instance.addSlide.bind(instance) as () => PptxGenJS.Slide
+    instance.addSlide = function (): PptxGenJS.Slide {
       const slide = origAddSlide()
       const origAddText = slide.addText.bind(slide)
-      slide.addText = function (textArr: any, opts: any) {
+      slide.addText = function (
+        textArr: string | PptxGenJS.TextProps[],
+        opts?: PptxGenJS.TextPropsOptions,
+      ): PptxGenJS.Slide {
         if (opts && "breakLine" in opts) {
           const { breakLine: _, ...cleanOpts } = opts
           if (Array.isArray(textArr)) {
-            textArr = textArr.map((t: any) => {
+            const processedArr = textArr.map((t) => {
               if (typeof t === "string") return { text: t, options: { breakLine: true } }
               return t
             })
+            return origAddText(processedArr, cleanOpts)
           }
           return origAddText(textArr, cleanOpts)
         }
@@ -39,12 +54,12 @@ export async function executeJsCode(code: string): Promise<void> {
     }
 
     instance._origWriteFile = instance.writeFile.bind(instance)
-    instance.writeFile = function () { return Promise.resolve() }
+    instance.writeFile = function () { return Promise.resolve("") }
     lastPres = instance
     return instance
   }
-  WrappedPptxGen.prototype = Object.create(PptxGenJS.prototype)
-  Object.setPrototypeOf(WrappedPptxGen, PptxGenJS)
+  WrappedPptxGen.prototype = Object.create(PptxGenJSCtor.prototype)
+  Object.setPrototypeOf(WrappedPptxGen, PptxGenJSCtor)
 
   const modules: Record<string, unknown> = {
     pptxgenjs: WrappedPptxGen,
@@ -52,12 +67,12 @@ export async function executeJsCode(code: string): Promise<void> {
   }
 
   const customRequire = (name: string): unknown => {
-    if (modules[name]) return modules[name]
+    if (name in modules) return modules[name]
     if (name === "fs") return createFsStub()
     throw new Error(`Modulo '${name}' no disponible. Solo pptxgenjs esta soportado.`)
   }
 
-  const fn = new Function("require", "console", "process", code)
+  const fn = new Function("require", "console", "process", code) as JsExecutor
 
   const customProcess = {
     exit: (code?: number) => {
@@ -70,8 +85,8 @@ export async function executeJsCode(code: string): Promise<void> {
   }
 
   try {
-    const result = fn(customRequire, console, customProcess)
-    if (result && typeof (result as Promise<unknown>).then === "function") {
+    const result: unknown = fn(customRequire, console, customProcess)
+    if (result != null && typeof (result as { then?: unknown }).then === "function") {
       await (result as Promise<unknown>)
     }
     addLog("Listo", "success")

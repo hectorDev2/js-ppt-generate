@@ -1,27 +1,25 @@
 import type { LogEntry } from "./types.js"
 
-interface AppState {
-  isProcessing: boolean
-  logs: LogEntry[]
+export interface AppState {
+  readonly isProcessing: boolean
+  readonly logs: readonly LogEntry[]
 }
 
-const state: AppState = {
-  isProcessing: false,
-  logs: [],
-}
+let isProcessing = false
+let logs: LogEntry[] = []
 
 export function getState(): AppState {
-  return state
+  return { isProcessing, logs: [...logs] }
 }
 
 export function setProcessing(v: boolean): void {
-  state.isProcessing = v
+  isProcessing = v
 }
 
 export function addLog(text: string, type: LogEntry["type"] = "info"): void {
-  state.logs.push({ text, type })
+  logs.push({ text, type })
 }
 
 export function clearLogs(): void {
-  state.logs.length = 0
+  logs = []
 }

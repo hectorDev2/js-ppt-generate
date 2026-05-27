@@ -24,9 +24,7 @@ export function compile(schema: PresentationSchema): CompileResult {
     theme = resolveTheme("corporate-light")
   }
 
-  const raw = schema as unknown as Record<string, unknown>
-  const meta = raw.meta as Record<string, unknown> | undefined
-  const docTitle = (raw.title as string) || (meta?.title as string) || "Presentation"
+  const docTitle = schema.title || schema.meta?.title || "Presentation"
 
   const slides: SlideNode[] = []
   for (let i = 0; i < (schema.slides || []).length; i++) {
@@ -42,10 +40,10 @@ export function compile(schema: PresentationSchema): CompileResult {
     dnt: {
       slides,
       theme,
-    metadata: {
-      title: docTitle,
-      slideCount: slides.length,
-    },
+      metadata: {
+        title: docTitle,
+        slideCount: slides.length,
+      },
     },
     warnings,
   }
@@ -84,7 +82,6 @@ function layoutElements(
 ): ElementNode[] {
   const nodes: ElementNode[] = []
   let currentY = PAD
-  const hasGrid = elementDefs.some((e) => e.type === "grid")
 
   let i = 0
   while (i < elementDefs.length) {
@@ -99,13 +96,13 @@ function layoutElements(
       let maxH = 0
       for (const col of colDefs) {
         try {
-          const node = elementToNode(col, theme, layout, slideIdx, currentY, hasGrid, warnings)
+          const node = elementToNode(col, theme, layout, slideIdx, currentY, warnings)
           if (node) {
             nodes.push(node)
             maxH = Math.max(maxH, node.computed.y + node.computed.h + GAP)
           }
         } catch (e) {
-          warnings.push(`slide #${slideIdx + 1}: error en columna - ${(e as Error).message}`)
+          warnings.push(`slide #${slideIdx + 1}: error en columna '${def.type}' - ${(e as Error).message}`)
         }
       }
       currentY = Math.max(currentY, maxH)
@@ -113,7 +110,7 @@ function layoutElements(
     }
 
     try {
-      const node = elementToNode(def, theme, layout, slideIdx, currentY, hasGrid, warnings)
+      const node = elementToNode(def, theme, layout, slideIdx, currentY, warnings)
       if (node) {
         if (currentY + node.computed.h > SLIDE_H - PAD && nodes.length > 0) {
           warnings.push(`slide #${slideIdx + 1}: contenido excede la altura del slide`)
@@ -122,7 +119,7 @@ function layoutElements(
         currentY = Math.max(currentY, node.computed.y + node.computed.h + GAP)
       }
     } catch (e) {
-      warnings.push(`slide #${slideIdx + 1}: error en elemento '${(def as any).type || "?"}' - ${(e as Error).message}`)
+      warnings.push(`slide #${slideIdx + 1}: error en elemento '${def.type}' - ${(e as Error).message}`)
     }
     i++
   }
@@ -136,10 +133,10 @@ function elementToNode(
   layout: string,
   slideIdx: number,
   currentY: number,
-  hasGrid: boolean,
   warnings: string[],
 ): ElementNode | null {
-  const grid = (def as any).grid as GridPos | undefined
+  const grid = def.grid
+  const pos = def.placement ?? {}
   const style = def.style || {}
 
   switch (def.type) {
@@ -151,7 +148,7 @@ function elementToNode(
 
       return {
         type: "heading",
-        computed: gridRect(grid, { y: currentY + topPad, h: size / 72 + 0.15 }),
+        computed: gridRect(grid, pos, { y: currentY + topPad, h: size / 72 + 0.15 }),
         style: resolveStyle(style, theme, { fontSize: size, bold: true, color: "primary" }),
         content: h.content,
       }
@@ -162,7 +159,7 @@ function elementToNode(
       const lines = estimateLines(t.content, 100)
       return {
         type: "text",
-        computed: gridRect(grid, { y: currentY, h: Math.max(lines * 0.25, 0.25) }),
+        computed: gridRect(grid, pos, { y: currentY, h: Math.max(lines * 0.25, 0.25) }),
         style: resolveStyle(style, theme, { fontSize: 14, color: "text" }),
         content: t.content,
       }
@@ -173,7 +170,7 @@ function elementToNode(
       const h = l.items.length * 0.25 + 0.15
       return {
         type: "list",
-        computed: gridRect(grid, { y: currentY, h }),
+        computed: gridRect(grid, pos, { y: currentY, h }),
         style: resolveStyle(style, theme, { fontSize: 14, color: "text" }),
         content: { items: l.items, ordered: l.ordered },
       }
@@ -184,7 +181,7 @@ function elementToNode(
       const rows = t.rows.length + 1
       return {
         type: "table",
-        computed: gridRect(grid, { y: currentY, h: rows * 0.25 + 0.15 }),
+        computed: gridRect(grid, pos, { y: currentY, h: rows * 0.25 + 0.15 }),
         style: resolveStyle(style, theme, { fontSize: 11 }),
         content: { headers: t.headers, rows: t.rows },
       }
@@ -195,7 +192,7 @@ function elementToNode(
       const rows = Math.ceil(g.items.length / g.columns)
       return {
         type: "grid",
-        computed: gridRect(grid, { y: currentY, h: rows * 0.9 + 0.2 }),
+        computed: gridRect(grid, pos, { y: currentY, h: rows * 0.9 + 0.2 }),
         style: resolveStyle(style, theme, { fontSize: 12 }),
         content: { items: g.items, columns: g.columns },
       }
@@ -205,7 +202,7 @@ function elementToNode(
       const s = def as import("../schema/types.js").StatDef
       return {
         type: "stat",
-        computed: gridRect(grid, { y: currentY, h: 0.5 }),
+        computed: gridRect(grid, pos, { y: currentY, h: 0.5 }),
         style: resolveStyle(style, theme, { fontSize: 14, color: "primary", bold: true }),
         content: { value: s.value, label: s.label, detail: s.detail },
       }
@@ -215,7 +212,7 @@ function elementToNode(
       const q = def as import("../schema/types.js").QuoteDef
       return {
         type: "quote",
-        computed: gridRect(grid, { y: currentY, h: 0.55 }),
+        computed: gridRect(grid, pos, { y: currentY, h: 0.55 }),
         style: resolveStyle(style, theme, { fontSize: 14, italic: true, color: "textSecondary" }),
         content: { text: q.text, author: q.author },
       }
@@ -225,7 +222,7 @@ function elementToNode(
       const sh = def as import("../schema/types.js").ShapeDef
       return {
         type: "shape",
-        computed: gridRect(grid, { y: currentY, h: sh.height || 0.08 }),
+        computed: gridRect(grid, pos, { y: currentY, h: sh.height || 0.08 }),
         style: resolveStyle(style, theme, { bgColor: sh.fill || "primary" }),
         content: { shape: sh.shape, fill: sh.fill },
       }
@@ -235,7 +232,7 @@ function elementToNode(
       const img = def as import("../schema/types.js").ImageDef
       return {
         type: "image",
-        computed: gridRect(grid, { y: currentY, h: 1.2 }),
+        computed: gridRect(grid, pos, { y: currentY, h: 1.2 }),
         style: resolveStyle(style, theme, {}),
         content: { src: img.src, alt: img.alt },
       }
@@ -244,7 +241,12 @@ function elementToNode(
     case "divider":
       return {
         type: "divider",
-        computed: { x: PAD, y: currentY + 0.1, w: SLIDE_W - PAD * 2, h: 0.02 },
+        computed: {
+          x: pos.x ?? PAD,
+          y: pos.y ?? currentY + 0.1,
+          w: pos.w ?? SLIDE_W - PAD * 2,
+          h: pos.h ?? 0.02,
+        },
         style: resolveStyle({ bgColor: "border" }, theme, {}),
         content: {},
       }
@@ -253,7 +255,7 @@ function elementToNode(
       const lbl = def as import("../schema/types.js").LabelDef
       return {
         type: "label",
-        computed: gridRect(grid, { y: currentY, h: 0.3 }),
+        computed: gridRect(grid, pos, { y: currentY, h: 0.3 }),
         style: resolveStyle(style, theme, { fontSize: 11, bold: true, color: "accent" }),
         content: lbl.content,
       }
@@ -264,7 +266,7 @@ function elementToNode(
       const rows = Math.ceil((c.items || []).length / (c.columns || 2))
       return {
         type: "cards",
-        computed: gridRect(grid, { y: currentY, h: rows * 1.2 + 0.3 }),
+        computed: gridRect(grid, pos, { y: currentY, h: rows * 1.2 + 0.3 }),
         style: resolveStyle(style, theme, { fontSize: 12 }),
         content: { items: c.items, columns: c.columns || 2 },
       }
@@ -276,7 +278,12 @@ function elementToNode(
       const cx = col.position === "left" ? PAD : SLIDE_W / 2 + PAD / 2
       return {
         type: "column",
-        computed: { x: cx, y: currentY, w: halfW, h: 1.8 },
+        computed: {
+          x: pos.x ?? cx,
+          y: pos.y ?? currentY,
+          w: pos.w ?? halfW,
+          h: pos.h ?? 1.8,
+        },
         style: resolveStyle(style, theme, {}),
         content: { elements: col.elements, position: col.position },
       }
@@ -287,7 +294,7 @@ function elementToNode(
       const nodes = fl.nodes || []
       return {
         type: "flow",
-        computed: gridRect(grid, { y: currentY, h: nodes.length * 0.4 + 0.2 }),
+        computed: gridRect(grid, pos, { y: currentY, h: nodes.length * 0.4 + 0.2 }),
         style: resolveStyle(style, theme, { fontSize: 12 }),
         content: { nodes: fl.nodes },
       }
@@ -298,28 +305,40 @@ function elementToNode(
       const phases = tl.items || []
       return {
         type: "timeline",
-        computed: gridRect(grid, { y: currentY, h: phases.length * 0.5 + 0.2 }),
+        computed: gridRect(grid, pos, { y: currentY, h: phases.length * 0.5 + 0.2 }),
         style: resolveStyle(style, theme, { fontSize: 11 }),
         content: { items: tl.items },
       }
     }
 
-    default:
-      warnings.push(`slide #${slideIdx + 1}: tipo '${(def as any).type}' ignorado`)
+    default: {
+      const unknownEl = def as ElementDef
+      warnings.push(`slide #${slideIdx + 1}: tipo '${unknownEl.type}' ignorado`)
       return null
+    }
   }
 }
 
-function gridRect(grid: GridPos | undefined, fallback: { y: number; h: number }): Rect {
+function gridRect(
+  grid: GridPos | undefined,
+  placement: Partial<Rect> | undefined,
+  fallback: { y: number; h: number },
+): Rect {
+  const pos = placement || {}
   if (grid) {
     return {
-      x: (grid.col - 1) * COL_W + PAD,
-      y: fallback.y,
-      w: grid.span * COL_W - PAD * 2,
-      h: fallback.h,
+      x: pos.x ?? (grid.col - 1) * COL_W + PAD,
+      y: pos.y ?? fallback.y,
+      w: pos.w ?? grid.span * COL_W - PAD * 2,
+      h: pos.h ?? fallback.h,
     }
   }
-  return { x: PAD, y: fallback.y, w: SLIDE_W - PAD * 2, h: fallback.h }
+  return {
+    x: pos.x ?? PAD,
+    y: pos.y ?? fallback.y,
+    w: pos.w ?? SLIDE_W - PAD * 2,
+    h: pos.h ?? fallback.h,
+  }
 }
 
 function estimateLines(text: string, charsPerLine: number): number {
