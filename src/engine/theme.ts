@@ -117,12 +117,12 @@ export function resolveStyle(
     return {
       color: resolveColor(colorRef, resolvedTheme),
       bgColor: bgRef === "transparent" ? "" : resolveColor(bgRef, resolvedTheme),
-      fontSize: (elementStyle?.fontSize as number) || base.fontSize,
-      bold: (elementStyle?.bold as boolean) || base.bold,
-      italic: (elementStyle?.italic as boolean) || base.italic,
+      fontSize: elementStyle?.fontSize !== undefined ? (elementStyle.fontSize as number) : base.fontSize,
+      bold: elementStyle?.bold !== undefined ? (elementStyle.bold as boolean) : base.bold,
+      italic: elementStyle?.italic !== undefined ? (elementStyle.italic as boolean) : base.italic,
       align: (elementStyle?.align as "left" | "center" | "right") || base.align,
       fontFace: resolveFont((elementStyle?.fontFace as string) || base.fontFace, resolvedTheme),
-      padding: (elementStyle?.padding as number) || base.padding,
+      padding: elementStyle?.padding !== undefined ? (elementStyle.padding as number) : base.padding,
     }
   } catch {
     return { color: "333333", bgColor: "", fontSize: 14, bold: false, italic: false, align: "left", fontFace: "Calibri", padding: 4 }

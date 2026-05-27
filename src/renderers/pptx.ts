@@ -287,13 +287,6 @@ function renderElement(s: any, el: ElementNode, pres: any, theme?: any): void {
       break
     }
 
-    case "divider":
-      s.addShape(pres.shapes.RECTANGLE, {
-        x, y, w, h,
-        fill: { color: st.bgColor || "E0E0E0" },
-        line: { type: "none" },
-      })
-      break
   }
 }
 

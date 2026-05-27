@@ -5,6 +5,8 @@ export interface PresentationSchema {
   type: "presentation"
   theme?: string | ThemeDef
   slides: SlideDef[]
+  title?: string
+  meta?: { title?: string; [key: string]: unknown }
 }
 
 export interface ThemeDef {
@@ -31,6 +33,7 @@ export type ElementDef =
 export interface BaseElement {
   style?: Partial<ElementStyle>
   grid?: GridPos
+  placement?: Partial<Rect>
 }
 
 export interface GridPos {

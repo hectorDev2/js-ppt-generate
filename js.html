@@ -26,12 +26,38 @@
     </div>
   </div>
   <div class="log-panel" id="logPanel">
-    <div class="log-header">Logs</div>
-    <div id="logOutput" class="log-output">
+    <div class="log-header">
+      <button class="tab-btn tab-active" data-tab="logs">Logs</button>
+      <button class="tab-btn" data-tab="preview">Preview</button>
+    </div>
+    <div class="log-output" id="logOutput">
       <div class="log-empty">Peg&aacute; c&oacute;digo pptxgenjs y presion&aacute; <strong>Ejecutar JS</strong></div>
+    </div>
+    <div class="preview-output" id="previewOutput" style="display:none">
+      <div class="preview-empty">Ejecut&aacute; el JS para ver la vista previa</div>
     </div>
   </div>
 </div>
+
+<template id="previewAppTmpl">
+  <div class="preview-app">
+    <div class="preview-main">
+      <div class="preview-viewport" id="previewViewport"></div>
+    </div>
+    <div class="preview-controls">
+      <button class="preview-nav" id="prevSlide" title="Anterior (←)">&larr;</button>
+      <span class="preview-counter" id="slideCounter">0 / 0</span>
+      <button class="preview-nav" id="nextSlide" title="Siguiente (→)">&rarr;</button>
+      <div class="preview-zoom">
+        <button class="preview-zoom-btn" data-zoom="fit">Fit</button>
+        <button class="preview-zoom-btn" data-zoom="100">100%</button>
+        <button class="preview-zoom-btn" data-zoom="75">75%</button>
+        <button class="preview-zoom-btn" data-zoom="50">50%</button>
+      </div>
+    </div>
+    <div class="preview-thumbs" id="previewThumbs"></div>
+  </div>
+</template>
 
 <script type="module" src="/src/main-js.ts"></script>
 </body>

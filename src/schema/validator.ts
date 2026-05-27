@@ -1,4 +1,4 @@
-import type { PresentationSchema, SlideDef, ElementDef } from "./types.js"
+import type { PresentationSchema } from "./types.js"
 
 export interface ValidationResult {
   valid: boolean
@@ -9,19 +9,29 @@ export interface ValidationResult {
 const VALID_TYPES = ["heading", "text", "image", "list", "table", "shape", "grid", "stat", "quote", "divider", "label", "cards", "column", "flow", "timeline"]
 const VALID_LAYOUTS = ["cover", "section", "content", "closing", "blank", "title", "two-column"]
 
-export function normalize(input: unknown): Record<string, unknown> {
+export type NormalizedSchema = Record<string, unknown> & { slides: unknown[] }
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+}
+
+function isString(v: unknown): v is string {
+  return typeof v === "string"
+}
+
+export function normalize(input: unknown): NormalizedSchema {
   if (Array.isArray(input)) {
-    if (input.length === 1 && typeof input[0] === "object" && input[0] !== null) {
+    if (input.length === 1 && isRecord(input[0])) {
       return normalize(input[0])
     }
-    return { slides: input.map((item) => normalizeSlide(item as Record<string, unknown>)) }
+    return { slides: input.map((item) => isRecord(item) ? normalizeSlide(item) : { layout: "content", elements: [] }) }
   }
 
-  if (typeof input !== "object" || input === null) return { slides: [] }
+  if (!isRecord(input)) return { slides: [] }
 
-  const raw = input as Record<string, unknown>
+  const raw = input
 
-  if (raw.presentation && typeof raw.presentation === "object" && !raw.slides) {
+  if (isRecord(raw.presentation) && !raw.slides) {
     const inner = normalize(raw.presentation)
     inner.theme = inner.theme || raw.theme
     return inner
@@ -30,15 +40,15 @@ export function normalize(input: unknown): Record<string, unknown> {
   const out: Record<string, unknown> = { ...raw }
   if (!out.version) out.version = "1.0"
   if (!out.type) out.type = "presentation"
-  return out
+  return out as NormalizedSchema
 }
 
 function normalizeSlide(slide: unknown): Record<string, unknown> {
-  if (typeof slide !== "object" || slide === null) return { layout: "content", elements: [] }
-  const s = slide as Record<string, unknown>
+  if (!isRecord(slide)) return { layout: "content", elements: [] }
+  const s = slide
   const out: Record<string, unknown> = { ...s }
   if (!out.layout) {
-    const t = out.type as string | undefined
+    const t = isString(out.type) ? out.type : undefined
     if (t === "cover") out.layout = "cover"
     else if (t === "section") out.layout = "section"
     else if (t === "closing") out.layout = "closing"
@@ -47,15 +57,15 @@ function normalizeSlide(slide: unknown): Record<string, unknown> {
   return out
 }
 
-export function validate(schema: unknown): ValidationResult {
+export function validate(schema: NormalizedSchema): ValidationResult {
   const errors: string[] = []
   const warnings: string[] = []
 
-  if (!schema || typeof schema !== "object") {
+  if (!isRecord(schema)) {
     return { valid: false, errors: ["El JSON debe ser un objeto"], warnings: [] }
   }
 
-  const s = schema as Record<string, unknown>
+  const s = schema
 
   if (!Array.isArray(s.slides)) {
     errors.push("El JSON debe tener una propiedad 'slides' con un array de slides")
@@ -76,14 +86,14 @@ export function validate(schema: unknown): ValidationResult {
 }
 
 function validateSlide(slide: unknown, idx: number, errors: string[], warnings: string[]): void {
-  if (!slide || typeof slide !== "object") {
+  if (!isRecord(slide)) {
     errors.push(`slides[${idx}]: debe ser un objeto`)
     return
   }
 
-  const s = slide as Record<string, unknown>
+  const s = slide
 
-  if (s.layout && !VALID_LAYOUTS.includes(s.layout as string)) {
+  if (isString(s.layout) && !VALID_LAYOUTS.includes(s.layout)) {
     warnings.push(`slides[${idx}].layout: '${s.layout}' no es estandar`)
   }
 
@@ -99,19 +109,19 @@ function validateSlide(slide: unknown, idx: number, errors: string[], warnings: 
 }
 
 function validateElement(el: unknown, slideIdx: number, elIdx: number, errors: string[], warnings: string[]): void {
-  if (!el || typeof el !== "object") {
+  if (!isRecord(el)) {
     errors.push(`slides[${slideIdx}].elements[${elIdx}]: debe ser un objeto`)
     return
   }
 
-  const e = el as Record<string, unknown>
+  const e = el
 
-  if (!e.type || typeof e.type !== "string") {
+  if (!isString(e.type)) {
     errors.push(`slides[${slideIdx}].elements[${elIdx}]: falta 'type'`)
     return
   }
 
-  if (!VALID_TYPES.includes(e.type as string)) {
+  if (!VALID_TYPES.includes(e.type)) {
     warnings.push(`slides[${slideIdx}].elements[${elIdx}].type: '${e.type}' desconocido`)
     return
   }
