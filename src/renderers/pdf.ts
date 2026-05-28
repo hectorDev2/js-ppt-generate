@@ -256,6 +256,57 @@ function renderElement(doc: any, el: ElementNode): void {
       }
       break
     }
+
+    case "chart": {
+      const ch = el.content as { chartType: string; data: Array<{ name: string; values: number[] }>; labels?: string[]; title?: string }
+      const labels = ch.labels || ch.data[0]?.values.map((_, i) => `#${i + 1}`) || []
+      const mmR = toMm(el.computed)
+      const barColors = ["#C8922A", "#2E86C1", "#E94560", "#2ECC71", "#3498DB", "#F39C12"]
+      const maxVal = Math.max(...ch.data.flatMap((s) => s.values), 1)
+      const barW = (mmR.w - 8) / labels.length - 2
+      const chartH = mmR.h - (ch.title ? 10 : 4)
+
+      if (ch.title) {
+        doc.setFontSize(11)
+        doc.setTextColor(hexToRgb(st.color)[0], hexToRgb(st.color)[1], hexToRgb(st.color)[2])
+        doc.text(ch.title, mmR.x + mmR.w / 2, mmR.y + 6, { align: "center" })
+      }
+
+      if (ch.chartType === "pie" || ch.chartType === "doughnut") {
+        const cx = mmR.x + mmR.w / 2; const cy = mmR.y + chartH / 2 + (ch.title ? 5 : 2)
+        const r = Math.min(mmR.w, chartH) / 2 * (ch.chartType === "doughnut" ? 0.6 : 0.9)
+        const total = ch.data[0]?.values.reduce((a: number, b: number) => a + b, 0) || 1
+        let startAngle = -90
+        for (let i = 0; i < (ch.data[0]?.values.length || 0); i++) {
+          const sliceAngle = (ch.data[0].values[i] / total) * 360
+          const endAngle = startAngle + sliceAngle
+          const [rr, rg, rb] = hexToRgb(barColors[i % barColors.length])
+          doc.setFillColor(rr, rg, rb)
+          for (let a = startAngle; a < endAngle; a += 2) {
+            const rad = a * Math.PI / 180
+            doc.line(cx, cy, cx + r * Math.cos(rad), cy + r * Math.sin(rad))
+          }
+          startAngle = endAngle
+        }
+      } else {
+        const nSeries = ch.data.length
+        const nBars = labels.length
+        const sBarW = Math.max(0.5, (barW - 0.5 * (nSeries - 1)) / nSeries)
+        const baseY = mmR.y + chartH + (ch.title ? 6 : 0)
+
+        for (let s = 0; s < nSeries; s++) {
+          const [rr, rg, rb] = hexToRgb(barColors[s % barColors.length])
+          doc.setFillColor(rr, rg, rb)
+          for (let b = 0; b < nBars; b++) {
+            const vh = (ch.data[s].values[b] / maxVal) * (chartH - 4)
+            const bx = mmR.x + 4 + b * (barW + 2) + s * (sBarW + 0.5)
+            const by = baseY - vh
+            if (vh > 0) doc.rect(bx, by, sBarW, vh, "F")
+          }
+        }
+      }
+      break
+    }
   }
 }
 
