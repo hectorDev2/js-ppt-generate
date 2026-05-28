@@ -301,6 +301,37 @@ async function init(): Promise<void> {
   })
 
   document.addEventListener("keydown", handleKeyboard)
+
+  // ── Image drag-and-drop ──
+  setupImageDrop()
+}
+
+function setupImageDrop(): void {
+  const dropArea = document.getElementById("editor")!
+  dropArea.addEventListener("dragover", (e) => { e.preventDefault(); e.stopPropagation() })
+  dropArea.addEventListener("drop", (e) => {
+    e.preventDefault(); e.stopPropagation()
+    const files = e.dataTransfer?.files
+    if (!files?.length) return
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith("image/")) continue
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        const snippet = `"src": "${dataUrl}"`
+        if (editorInstance) {
+          editorInstance.executeEdits("drop-image", [{
+            range: editorInstance.getSelection() || { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 },
+            text: snippet,
+          }])
+        }
+        addLog(`Imagen cargada: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`, "info")
+        renderLogs()
+        switchTab("logs")
+      }
+      reader.readAsDataURL(file)
+    }
+  })
 }
 
 document.addEventListener("DOMContentLoaded", init)

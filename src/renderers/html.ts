@@ -223,6 +223,61 @@ function renderElementToHtml(el: ElementNode, scale: number): string {
       </div>`
     }
 
+    case "chart": {
+      const ch = el.content as { chartType: string; data: Array<{ name: string; values: number[] }>; labels?: string[]; title?: string; showLegend?: boolean }
+      const chartW = rect.w - 0.2
+      const chartH = rect.h - (ch.title ? 0.3 : 0.1)
+      const maxVal = Math.max(...ch.data.flatMap((s) => s.values), 1)
+      const labels = ch.labels || ch.data[0]?.values.map((_, i) => `#${i + 1}`) || []
+      const colors = ["#" + st.color, "#" + (st.bgColor || "888"), "#E94560", "#2ECC71", "#3498DB", "#F39C12"]
+      const barW = (chartW - 0.1) / labels.length - 0.1
+      const svgH = px(chartH, scale)
+      const svgW = px(chartW, scale)
+
+      let svg = ""
+      if (ch.chartType === "pie" || ch.chartType === "doughnut") {
+        const cx = svgW / 2; const cy = svgH / 2
+        const r = Math.min(cx, cy) * (ch.chartType === "doughnut" ? 0.6 : 0.9)
+        const total = ch.data[0]?.values.reduce((a, b) => a + b, 0) || 1
+        let angle = -90
+        for (let i = 0; i < (ch.data[0]?.values.length || 0); i++) {
+          const slice = (ch.data[0].values[i] / total) * 360
+          const endAngle = angle + slice
+          const x1 = cx + r * Math.cos(angle * Math.PI / 180)
+          const y1 = cy + r * Math.sin(angle * Math.PI / 180)
+          const x2 = cx + r * Math.cos(endAngle * Math.PI / 180)
+          const y2 = cy + r * Math.sin(endAngle * Math.PI / 180)
+          const largeArc = slice > 180 ? 1 : 0
+          svg += `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z" fill="${colors[i % colors.length]}" stroke="#111" stroke-width="1"/>`
+          angle = endAngle
+        }
+        if (ch.chartType === "doughnut") {
+          const ir = r * 0.55
+          svg += `<circle cx="${cx}" cy="${cy}" r="${ir}" fill="#111"/>`
+        }
+      } else {
+        const series = ch.data
+        const nBars = labels.length
+        const nSeries = series.length
+        const barGap = barW * 0.1
+        const sBarW = Math.max(1, (barW - barGap * (nSeries - 1)) / nSeries)
+        for (let s = 0; s < nSeries; s++) {
+          for (let b = 0; b < nBars; b++) {
+            const vh = (series[s].values[b] / maxVal) * (svgH - 20)
+            const bx = px(0.1, scale) + b * px(barW, scale) + px(0.05, scale) + s * (px(sBarW, scale) + px(barGap, scale))
+            const by = svgH - vh - 12
+            svg += `<rect x="${bx}" y="${by}" width="${px(sBarW, scale)}" height="${vh}" fill="${colors[s % colors.length]}" rx="1"/>`
+          }
+        }
+      }
+
+      const titleHtml = ch.title ? `<div style="font-size:${Math.max(1, Math.round(st.fontSize * scale / 96))}px;font-weight:700;padding:${Math.max(1, px(0.05, scale))}px 0;text-align:center">${escapeHtml(ch.title)}</div>` : ""
+      return `<div style="${css}">
+        ${titleHtml}
+        <svg width="${svgW}" height="${svgH}" style="display:block">${svg}</svg>
+      </div>`
+    }
+
     default:
       return ""
   }

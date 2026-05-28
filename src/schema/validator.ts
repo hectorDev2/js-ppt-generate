@@ -6,10 +6,10 @@ export interface ValidationResult {
   warnings: string[]
 }
 
-const VALID_TYPES = ["heading", "text", "image", "list", "table", "shape", "grid", "stat", "quote", "divider", "label", "cards", "column", "flow", "timeline"]
+const VALID_TYPES = ["heading", "text", "image", "list", "table", "shape", "grid", "stat", "quote", "divider", "label", "cards", "column", "flow", "timeline", "component", "chart"]
 const VALID_LAYOUTS = ["cover", "section", "content", "closing", "blank", "title", "two-column"]
 
-export type NormalizedSchema = Record<string, unknown> & { slides: unknown[] }
+export type NormalizedSchema = Record<string, unknown> & { slides: unknown[]; definitions?: Record<string, unknown> }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v)
@@ -17,6 +17,10 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function isString(v: unknown): v is string {
   return typeof v === "string"
+}
+
+function isObj(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
 }
 
 export function normalize(input: unknown): NormalizedSchema {
@@ -40,6 +44,11 @@ export function normalize(input: unknown): NormalizedSchema {
   const out: Record<string, unknown> = { ...raw }
   if (!out.version) out.version = "1.0"
   if (!out.type) out.type = "presentation"
+
+  if (isRecord(out.definitions)) {
+    out.definitions = out.definitions
+  }
+
   return out as NormalizedSchema
 }
 
@@ -136,4 +145,8 @@ function validateElement(el: unknown, slideIdx: number, elIdx: number, errors: s
     errors.push(`slides[${slideIdx}].elements[${elIdx}]: shape requiere 'shape' (rect/circle/line)`)
   if (e.type === "quote" && !e.text)
     errors.push(`slides[${slideIdx}].elements[${elIdx}]: quote requiere text`)
+  if (e.type === "component" && !e.ref)
+    errors.push(`slides[${slideIdx}].elements[${elIdx}]: component requiere ref`)
+  if (e.type === "chart" && (!e.chartType || !Array.isArray(e.data)))
+    errors.push(`slides[${slideIdx}].elements[${elIdx}]: chart requiere chartType y data[]`)
 }

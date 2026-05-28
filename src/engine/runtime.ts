@@ -1,4 +1,4 @@
-import type { PresentationSchema, SlideDef, ElementDef, DocumentNodeTree, SlideNode, ElementNode, Rect, ResolvedStyle, ElementStyle, GridPos } from "../schema/types.js"
+import type { PresentationSchema, SlideDef, ElementDef, DocumentNodeTree, SlideNode, ElementNode, Rect, ResolvedStyle, ElementStyle, GridPos, ComponentRefDef, ChartDef } from "../schema/types.js"
 import { resolveTheme, resolveStyle, resolveColor } from "./theme.js"
 
 export interface CompileResult {
@@ -13,6 +13,35 @@ const COL_W = SLIDE_W / COLS
 const PAD = 0.35
 const GAP = 0.08
 
+// ── Canvas text measurement ──
+
+let measureCtx: CanvasRenderingContext2D | null = null
+
+function getMeasureCtx(): CanvasRenderingContext2D {
+  if (!measureCtx) {
+    const c = document.createElement("canvas")
+    measureCtx = c.getContext("2d")!
+  }
+  return measureCtx
+}
+
+function measureTextLines(text: string, fontSize: number, fontFace: string, maxWidthIn: number, bold: boolean, italic: boolean): number {
+  if (!text) return 1
+  const ctx = getMeasureCtx()
+  const style = `${italic ? "italic " : ""}${bold ? "bold " : ""}${fontSize}pt ${fontFace || "Calibri"}`
+  ctx.font = style
+  const maxPx = maxWidthIn * 96
+  const charW = ctx.measureText("a").width
+  let totalLines = 0
+  for (const line of text.split("\n")) {
+    if (!line) { totalLines++; continue }
+    totalLines += Math.max(1, Math.ceil(ctx.measureText(line).width / maxPx))
+  }
+  return Math.max(totalLines, Math.ceil(text.length * charW / maxPx))
+}
+
+// ── Compile ──
+
 export function compile(schema: PresentationSchema): CompileResult {
   const warnings: string[] = []
 
@@ -25,11 +54,14 @@ export function compile(schema: PresentationSchema): CompileResult {
   }
 
   const docTitle = schema.title || schema.meta?.title || "Presentation"
+  const defs = schema.definitions || {}
 
   const slides: SlideNode[] = []
   for (let i = 0; i < (schema.slides || []).length; i++) {
     try {
-      const slide = compileSlide(schema.slides[i], i, theme, warnings)
+      const elems = resolveComponents(schema.slides[i].elements, defs, i, warnings)
+      const slideDef: SlideDef = { ...schema.slides[i], elements: elems }
+      const slide = compileSlide(slideDef, i, slides.length, theme, warnings)
       slides.push(slide)
     } catch (e) {
       warnings.push(`slide #${i + 1}: error al compilar - ${(e as Error).message}`)
@@ -40,17 +72,56 @@ export function compile(schema: PresentationSchema): CompileResult {
     dnt: {
       slides,
       theme,
-      metadata: {
-        title: docTitle,
-        slideCount: slides.length,
-      },
+      metadata: { title: docTitle, slideCount: slides.length },
     },
     warnings,
   }
 }
 
-function compileSlide(def: SlideDef, idx: number, theme: ReturnType<typeof resolveTheme>, warnings: string[]): SlideNode {
-  const layout = def.layout || "content"
+// ── Component resolver ──
+
+function resolveComponents(
+  elements: ElementDef[],
+  defs: Record<string, { elements: ElementDef[] }>,
+  slideIdx: number,
+  warnings: string[],
+): ElementDef[] {
+  const out: ElementDef[] = []
+  for (const el of elements) {
+    if (el.type === "component") {
+      const cref = (el as unknown as ComponentRefDef)
+      const tmpl = defs[cref.ref]
+      if (!tmpl) {
+        warnings.push(`slide #${slideIdx + 1}: component ref '${cref.ref}' no encontrado`)
+        continue
+      }
+      const expanded = expandTemplate(tmpl.elements, cref.props || {})
+      for (const e of expanded) out.push(e)
+    } else {
+      out.push(el)
+    }
+  }
+  return out
+}
+
+function expandTemplate(elements: ElementDef[], props: Record<string, string>): ElementDef[] {
+  const replace = (s: unknown): unknown => {
+    if (typeof s === "string") return s.replace(/\{\{(\w+)\}\}/g, (_, k) => props[k] ?? `{{${k}}}`)
+    if (Array.isArray(s)) return s.map(replace)
+    if (s && typeof s === "object") {
+      const r: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(s as Record<string, unknown>)) r[k] = replace(v)
+      return r
+    }
+    return s
+  }
+  return replace(elements) as ElementDef[]
+}
+
+// ── Slide compilation ──
+
+function compileSlide(def: SlideDef, idx: number, totalSlides: number, theme: ReturnType<typeof resolveTheme>, warnings: string[]): SlideNode {
+  const layout = def.layout || detectLayout(idx, totalSlides)
   let bgColor = ""
   try {
     bgColor = def.background ? resolveColor(def.background, theme) : resolveColor("background", theme)
@@ -65,6 +136,8 @@ function compileSlide(def: SlideDef, idx: number, theme: ReturnType<typeof resol
     warnings.push(`slide #${idx + 1}: error en layout - ${(e as Error).message}`)
   }
 
+  checkOverflow(elements, idx, warnings)
+
   return {
     id: def.id || `slide-${idx + 1}`,
     layout,
@@ -72,6 +145,32 @@ function compileSlide(def: SlideDef, idx: number, theme: ReturnType<typeof resol
     elements,
   }
 }
+
+function detectLayout(index: number, total: number): SlideDef["layout"] & string {
+  if (total <= 1) return "content"
+  if (index === 0) return "cover"
+  if (index === total - 1) return "closing"
+  return "content"
+}
+
+// ── Overflow detection ──
+
+function checkOverflow(elements: ElementNode[], slideIdx: number, warnings: string[]): void {
+  for (const el of elements) {
+    const { x, y, w, h } = el.computed
+    if (x + w > SLIDE_W + 0.05) {
+      warnings.push(`slide #${slideIdx + 1}: '${el.type}' excede el slide por la derecha (${x.toFixed(1)} + ${w.toFixed(1)} = ${(x + w).toFixed(1)} > ${SLIDE_W})`)
+    }
+    if (y + h > SLIDE_H + 0.05) {
+      warnings.push(`slide #${slideIdx + 1}: '${el.type}' excede el slide por abajo (${y.toFixed(1)} + ${h.toFixed(1)} = ${(y + h).toFixed(1)} > ${SLIDE_H})`)
+    }
+    if (x < -0.05) {
+      warnings.push(`slide #${slideIdx + 1}: '${el.type}' excede el slide por la izquierda (x=${x.toFixed(1)})`)
+    }
+  }
+}
+
+// ── Layout engine ──
 
 function layoutElements(
   elementDefs: ElementDef[],
@@ -82,11 +181,31 @@ function layoutElements(
 ): ElementNode[] {
   const nodes: ElementNode[] = []
   let currentY = PAD
+  const topPad = layout === "cover" ? 0.6 : 0
 
   let i = 0
   while (i < elementDefs.length) {
     const def = elementDefs[i]
 
+    // ── Stats horizontal grouping ──
+    if (def.type === "stat") {
+      const stats: ElementDef[] = []
+      while (i < elementDefs.length && elementDefs[i].type === "stat") {
+        stats.push(elementDefs[i])
+        i++
+      }
+      const statW = SLIDE_W / stats.length - PAD
+      for (let s = 0; s < stats.length; s++) {
+        const stDef = stats[s]
+        const stGrid = stDef.grid || { col: s * 2 + 1, span: 2 }
+        const node = elementToNode({ ...stDef, grid: stGrid }, theme, layout, slideIdx, currentY, warnings)
+        if (node) nodes.push(node)
+      }
+      currentY += 0.65
+      continue
+    }
+
+    // ── Column layout ──
     if (def.type === "column") {
       const colDefs: ElementDef[] = []
       while (i < elementDefs.length && elementDefs[i].type === "column") {
@@ -102,7 +221,7 @@ function layoutElements(
             maxH = Math.max(maxH, node.computed.y + node.computed.h + GAP)
           }
         } catch (e) {
-          warnings.push(`slide #${slideIdx + 1}: error en columna '${def.type}' - ${(e as Error).message}`)
+          warnings.push(`slide #${slideIdx + 1}: error en columna - ${(e as Error).message}`)
         }
       }
       currentY = Math.max(currentY, maxH)
@@ -110,7 +229,8 @@ function layoutElements(
     }
 
     try {
-      const node = elementToNode(def, theme, layout, slideIdx, currentY, warnings)
+      const adjustedDef = def
+      const node = elementToNode(adjustedDef, theme, layout, slideIdx, currentY + (layout === "cover" && nodes.length === 0 ? topPad : 0), warnings)
       if (node) {
         if (currentY + node.computed.h > SLIDE_H - PAD && nodes.length > 0) {
           warnings.push(`slide #${slideIdx + 1}: contenido excede la altura del slide`)
@@ -126,6 +246,8 @@ function layoutElements(
 
   return nodes
 }
+
+// ── Element compiler ──
 
 function elementToNode(
   def: ElementDef,
@@ -143,24 +265,31 @@ function elementToNode(
     case "heading": {
       const h = def as import("../schema/types.js").HeadingDef
       const level = h.level || 1
-      const size = level === 1 ? 36 : level === 2 ? 22 : 18
-      const topPad = level === 1 ? (layout === "cover" ? 0.6 : 0.15) : 0.08
+      const size = level === 1 ? (layout === "cover" ? 40 : 36) : level === 2 ? 22 : 18
+      const topPad = level === 1 ? (layout === "cover" ? 0.15 : 0.15) : 0.08
+      const fs = style.fontSize || size
+      const bold = style.bold !== undefined ? style.bold : true
+      const w = pos.w ?? (SLIDE_W - PAD * 2)
+      const lines = measureTextLines(h.content, fs, style.fontFace || theme.fonts.heading, w, bold, style.italic || false)
+      const hVal = Math.max(lines * fs / 72 * 1.3 + 0.1, fs / 72 + 0.12)
 
       return {
         type: "heading",
-        computed: gridRect(grid, pos, { y: currentY + topPad, h: size / 72 + 0.15 }),
-        style: resolveStyle(style, theme, { fontSize: size, bold: true, color: "primary" }),
+        computed: gridRect(grid, pos, { y: currentY + topPad, h: hVal }),
+        style: resolveStyle({ ...style, bold, fontSize: fs }, theme, { fontSize: size, bold: true, color: "primary" }),
         content: h.content,
       }
     }
 
     case "text": {
       const t = def as import("../schema/types.js").TextDef
-      const lines = estimateLines(t.content, 100)
+      const fs = style.fontSize || 14
+      const w = pos.w ?? (SLIDE_W - PAD * 2)
+      const lines = measureTextLines(t.content, fs, style.fontFace || theme.fonts.body, w, false, false)
       return {
         type: "text",
-        computed: gridRect(grid, pos, { y: currentY, h: Math.max(lines * 0.25, 0.25) }),
-        style: resolveStyle(style, theme, { fontSize: 14, color: "text" }),
+        computed: gridRect(grid, pos, { y: currentY, h: Math.max(lines * fs / 72 * 1.4 + 0.06, 0.25) }),
+        style: resolveStyle({ ...style, fontSize: fs }, theme, { fontSize: 14, color: "text" }),
         content: t.content,
       }
     }
@@ -187,14 +316,18 @@ function elementToNode(
       }
     }
 
-    case "grid": {
-      const g = def as import("../schema/types.js").GridDef
-      const rows = Math.ceil(g.items.length / g.columns)
+    case "grid":
+    case "cards": {
+      const g = "columns" in def ? def : def as import("../schema/types.js").CardsDef
+      const gd = g as import("../schema/types.js").GridDef
+      const cols = "columns" in gd ? gd.columns : ((def as import("../schema/types.js").CardsDef).columns || 2)
+      const items = (gd as unknown as { items: unknown[] }).items || []
+      const rows = Math.ceil(items.length / cols)
       return {
-        type: "grid",
+        type: def.type,
         computed: gridRect(grid, pos, { y: currentY, h: rows * 0.9 + 0.2 }),
         style: resolveStyle(style, theme, { fontSize: 12 }),
-        content: { items: g.items, columns: g.columns },
+        content: { items, columns: cols },
       }
     }
 
@@ -202,7 +335,7 @@ function elementToNode(
       const s = def as import("../schema/types.js").StatDef
       return {
         type: "stat",
-        computed: gridRect(grid, pos, { y: currentY, h: 0.5 }),
+        computed: gridRect(grid, pos, { y: currentY, h: 0.55 }),
         style: resolveStyle(style, theme, { fontSize: 14, color: "primary", bold: true }),
         content: { value: s.value, label: s.label, detail: s.detail },
       }
@@ -232,7 +365,7 @@ function elementToNode(
       const img = def as import("../schema/types.js").ImageDef
       return {
         type: "image",
-        computed: gridRect(grid, pos, { y: currentY, h: 1.2 }),
+        computed: gridRect(grid, pos, { y: currentY, h: pos.h || 2.0 }),
         style: resolveStyle(style, theme, {}),
         content: { src: img.src, alt: img.alt },
       }
@@ -258,17 +391,6 @@ function elementToNode(
         computed: gridRect(grid, pos, { y: currentY, h: 0.3 }),
         style: resolveStyle(style, theme, { fontSize: 11, bold: true, color: "accent" }),
         content: lbl.content,
-      }
-    }
-
-    case "cards": {
-      const c = def as import("../schema/types.js").CardsDef
-      const rows = Math.ceil((c.items || []).length / (c.columns || 2))
-      return {
-        type: "cards",
-        computed: gridRect(grid, pos, { y: currentY, h: rows * 1.2 + 0.3 }),
-        style: resolveStyle(style, theme, { fontSize: 12 }),
-        content: { items: c.items, columns: c.columns || 2 },
       }
     }
 
@@ -311,6 +433,25 @@ function elementToNode(
       }
     }
 
+    case "chart": {
+      const ch = def as import("../schema/types.js").ChartDef
+      return {
+        type: "chart",
+        computed: gridRect(grid, pos, { y: currentY, h: pos.h || 2.5 }),
+        style: resolveStyle(style, theme, { fontSize: 11 }),
+        content: {
+          chartType: ch.chartType,
+          data: ch.data,
+          labels: ch.labels,
+          title: ch.title,
+          showLegend: ch.showLegend,
+          showValues: ch.showValues,
+          catAxisLabel: ch.catAxisLabel,
+          valAxisLabel: ch.valAxisLabel,
+        },
+      }
+    }
+
     default: {
       const unknownEl = def as ElementDef
       warnings.push(`slide #${slideIdx + 1}: tipo '${unknownEl.type}' ignorado`)
@@ -318,6 +459,8 @@ function elementToNode(
     }
   }
 }
+
+// ── Grid / placement resolver ──
 
 function gridRect(
   grid: GridPos | undefined,
@@ -339,11 +482,4 @@ function gridRect(
     w: pos.w ?? SLIDE_W - PAD * 2,
     h: pos.h ?? fallback.h,
   }
-}
-
-function estimateLines(text: string, charsPerLine: number): number {
-  if (!text) return 1
-  const lines = text.split("\n").length
-  const wrapped = text.split("\n").reduce((sum, line) => sum + Math.ceil(line.length / charsPerLine), 0)
-  return Math.max(lines, wrapped)
 }

@@ -64,6 +64,15 @@ function expandTheme(t: Record<string, unknown>): ResolvedTheme {
   const colors = t.colors as Record<string, string> | undefined
   const c: Record<string, string> = colors ? { ...colors } : {}
 
+  // Flattened theme: { primary: "#xxx", background: "#xxx", ... }
+  if (Object.keys(c).length === 0) {
+    const flatKeys = ["primary", "secondary", "accent", "background", "surface", "text", "textSecondary", "border", "success"]
+    for (const k of flatKeys) {
+      if (typeof t[k] === "string") c[k] = t[k] as string
+    }
+  }
+
+  // Legacy fallback
   if (Object.keys(c).length === 0 && t.primaryColor) {
     c.primary = t.primaryColor as string
     c.secondary = (t.secondaryColor as string) || ""

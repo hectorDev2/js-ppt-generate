@@ -25,6 +25,54 @@ export function setupMonacoEnvironment(): void {
 
 export async function createEditor(config: EditorConfig): Promise<editor.IStandaloneCodeEditor> {
   const monaco = await import("monaco-editor")
+
+  if (config.language === "json") {
+    monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+      validate: true,
+      allowComments: false,
+      schemas: [{
+        uri: "urn:js-ppt-generate:schema",
+        fileMatch: ["*"],
+        schema: {
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Titulo de la presentacion" },
+            version: { type: "string", default: "1.0" },
+            type: { type: "string", enum: ["presentation"], default: "presentation" },
+            theme: {
+              oneOf: [
+                { type: "string", enum: ["corporate-light", "corporate-dark", "dark", "minimal"] },
+                { type: "object", properties: { primary: { type: "string" }, secondary: { type: "string" }, accent: { type: "string" }, background: { type: "string" }, surface: { type: "string" }, text: { type: "string" }, textSecondary: { type: "string" }, border: { type: "string" }, success: { type: "string" }, fontFace: { type: "string" } } },
+              ],
+              description: "Tema: string con nombre o objeto con colores personalizados",
+            },
+            definitions: {
+              type: "object",
+              description: "Componentes reutilizables",
+              additionalProperties: {
+                type: "object",
+                properties: { elements: { type: "array" } },
+              },
+            },
+            slides: {
+              type: "array",
+              description: "Array de slides de la presentacion",
+              items: {
+                type: "object",
+                properties: {
+                  layout: { type: "string", enum: ["cover", "section", "content", "closing", "blank"], description: "Tipo de layout del slide" },
+                  background: { type: "string", description: "Color de fondo (hex o token)" },
+                  elements: { type: "array", description: "Elementos del slide" },
+                },
+              },
+            },
+          },
+          required: ["slides"],
+        },
+      }],
+    })
+  }
+
   return monaco.editor.create(config.container, {
     value: config.initialValue,
     language: config.language,

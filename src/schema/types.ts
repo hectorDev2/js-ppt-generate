@@ -7,12 +7,26 @@ export interface PresentationSchema {
   slides: SlideDef[]
   title?: string
   meta?: { title?: string; [key: string]: unknown }
+  definitions?: Record<string, ComponentDef>
+}
+
+export interface ComponentDef {
+  elements: ElementDef[]
 }
 
 export interface ThemeDef {
   name?: string
   colors: Record<string, string>
   fonts?: { heading?: string; body?: string }
+  background?: string
+  primary?: string
+  secondary?: string
+  accent?: string
+  text?: string
+  textSecondary?: string
+  surface?: string
+  border?: string
+  success?: string
 }
 
 export interface SlideDef {
@@ -29,6 +43,7 @@ export type ElementDef =
   | ListDef | TableDef | ShapeDef
   | GridDef | StatDef | QuoteDef | DividerDef
   | LabelDef | CardsDef | ColumnDef | FlowDef | TimelineDef
+  | ComponentRefDef | ChartDef
 
 export interface BaseElement {
   style?: Partial<ElementStyle>
@@ -157,6 +172,31 @@ export interface TimelineItem {
   period: string
   title: string
   items: string[]
+}
+
+export interface ComponentRefDef extends BaseElement {
+  type: "component"
+  ref: string
+  props?: Record<string, string>
+}
+
+export type ChartType = "bar" | "line" | "pie" | "doughnut" | "radar" | "scatter" | "area"
+
+export interface ChartDef extends BaseElement {
+  type: "chart"
+  chartType: ChartType
+  data: ChartSeries[]
+  labels?: string[]
+  title?: string
+  showLegend?: boolean
+  showValues?: boolean
+  catAxisLabel?: string
+  valAxisLabel?: string
+}
+
+export interface ChartSeries {
+  name: string
+  values: number[]
 }
 
 // ── Document Node Tree (Resolved Runtime) ────────────────────

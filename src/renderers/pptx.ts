@@ -287,6 +287,28 @@ function renderElement(s: any, el: ElementNode, pres: any, theme?: any): void {
       break
     }
 
+    case "chart": {
+      const chartData = el.content as { chartType: string; data: Array<{ name: string; values: number[] }>; labels?: string[]; title?: string; showLegend?: boolean; showValues?: boolean; catAxisLabel?: string; valAxisLabel?: string }
+      const labels = chartData.labels || chartData.data[0]?.values.map((_, i) => `Item ${i + 1}`) || []
+      const series = chartData.data.map((s) => ({ name: s.name, labels, values: s.values }))
+      const opts: Record<string, unknown> = {
+        x, y, w, h,
+        showLegend: chartData.showLegend !== false,
+        showTitle: !!chartData.title,
+        title: chartData.title || "",
+        catAxisLabelFontSize: 9,
+        valAxisLabelFontSize: 9,
+      }
+      if (chartData.catAxisLabel) opts.catAxisLabel = chartData.catAxisLabel
+      if (chartData.valAxisLabel) opts.valAxisLabel = chartData.valAxisLabel
+      if (chartData.showValues) {
+        opts.showValue = true
+        opts.dataLabelFontSize = 9
+      }
+      s.addChart(chartData.chartType as any, series as any, opts as any)
+      break
+    }
+
   }
 }
 
