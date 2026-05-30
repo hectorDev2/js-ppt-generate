@@ -335,6 +335,11 @@ header span {
 .preview-viewport::-webkit-scrollbar-track { background: #111; }
 .preview-viewport::-webkit-scrollbar-thumb { background: #2a2a4e; border-radius: 3px; }
 
+.preview-iframe {
+  background: #333;
+  border-radius: 4px;
+}
+
 @media (max-width: 800px) {
   .main { flex-direction: column; }
   .editor-panel { width: 100%; min-width: 0; height: 50vh; border-right: none; border-bottom: 1px solid var(--border); }

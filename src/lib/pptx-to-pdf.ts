@@ -1,4 +1,5 @@
 import type { PptxInstance } from "../modes/library.js"
+import "jspdf-autotable"
 
 const INCH_TO_MM = 25.4
 const PT_TO_MM = 0.3528
@@ -7,6 +8,7 @@ interface PptxSlideObject {
   shape?: string
   text?: PptxTextItem[]
   options?: PptxObjectOptions
+  _type?: string
 }
 
 interface PptxObjectOptions {
@@ -43,10 +45,40 @@ interface PptxTextItemOptions {
 interface PptxSlide {
   background?: { color?: string }
   _slideObjects?: PptxSlideObject[]
+  _newAutoPagedSlides?: Array<{ rows: PptxTableRow[]; options?: PptxTableOptions }>
+}
+
+interface PptxTableRow {
+  _type?: string
+  text?: string | string[]
+  options?: PptxCellOptions
+}
+
+interface CapturedTableCell {
+  text?: string
+  options?: PptxCellOptions
+}
+
+interface PptxCellOptions {
+  fontSize?: number
+  fontFace?: string
+  bold?: boolean
+  italic?: boolean
+  color?: string
+  fill?: { color?: string }
+  align?: "left" | "center" | "right"
+}
+
+interface PptxTableOptions {
+  x?: number
+  y?: number
+  w?: number
+  colW?: number[]
 }
 
 export async function pptxToPdf(pres: PptxInstance): Promise<Blob> {
   const { jsPDF } = await import("jspdf")
+  await import("jspdf-autotable")
 
   const slideW = pres.layout === "LAYOUT_WIDE" ? 13.33 : 10
   const slideH = pres.layout === "LAYOUT_4x3" ? 7.5 : pres.layout === "LAYOUT_WIDE" ? 7.5 : 5.625
@@ -73,6 +105,38 @@ export async function pptxToPdf(pres: PptxInstance): Promise<Blob> {
       try {
         renderObject(doc, obj)
       } catch {}
+    }
+
+    const tableSlides = slide?._newAutoPagedSlides || []
+    for (const tableSlide of tableSlides) {
+      try {
+        const headRows: string[][] = []
+        const bodyRows: string[][] = []
+        let inHeader = true
+        for (const row of tableSlide.rows) {
+          const cellTexts = extractCellTexts(row)
+          if (cellTexts.length === 0) continue
+          if (inHeader) {
+            headRows.push(cellTexts)
+            inHeader = false
+          } else {
+            bodyRows.push(cellTexts)
+          }
+        }
+        ;(doc as unknown as { autoTable: (opts: unknown) => void }).autoTable({
+          head: headRows,
+          body: bodyRows,
+          startY: mm(tableSlide.options?.y || 0.5),
+          margin: { left: mm(tableSlide.options?.x || 0.35) },
+          tableWidth: tableSlide.options?.w ? mm(tableSlide.options.w) : mm(slideW - 0.7),
+          columnStyles: tableSlide.options?.colW ? tableSlide.options.colW.reduce((acc: Record<number, unknown>, w, i) => { acc[i] = { cellWidth: mm(w) }; return acc }, {}) : {},
+          styles: { fontSize: 10, cellPadding: 2, lineColor: [42, 42, 62], lineWidth: 0.1 },
+          headStyles: { fillColor: [22, 33, 62], textColor: [200, 146, 42], fontStyle: "bold" },
+          bodyStyles: { fillColor: [26, 26, 46], textColor: [244, 236, 216] },
+        })
+      } catch (e) {
+        console.warn("Table render error:", e)
+      }
     }
   }
 
@@ -176,4 +240,18 @@ function hexToRgb(hex: string): [number, number, number] {
 
 function mm(inches: number): number {
   return inches * INCH_TO_MM
+}
+
+function renderTable(doc: unknown, tableSlide: { rows: PptxTableRow[]; options?: PptxTableOptions }, slideW: number): void {
+  // Tables are now rendered inline in pptxToPdf
+  void doc
+  void tableSlide
+  void slideW
+}
+
+function extractCellTexts(row: PptxTableRow): string[] {
+  if (!row) return []
+  if (typeof row.text === "string") return [row.text]
+  if (Array.isArray(row.text)) return row.text.map((t) => (typeof t === "string" ? t : ""))
+  return []
 }

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "monaco-editor": "^0.52.0",
     "pptxgenjs": "^3.12.0"
   },

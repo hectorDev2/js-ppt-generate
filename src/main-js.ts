@@ -1,6 +1,6 @@
 import { SAMPLE_JS_PPT } from "./lib/samples.js"
-import { executeJsCode, downloadPptx, downloadPdfFromPres, getLastPres, type PptxInstance } from "./modes/library.js"
-import { renderJsSlide } from "./modes/js-preview.js"
+import { executeJsCode, downloadPptx, downloadPdfFromPres, getLastPres } from "./modes/library.js"
+import { captureSlideToPng } from "./modes/js-preview.js"
 import { setProcessing, addLog, clearLogs } from "./state.js"
 import { setupMonacoEnvironment, createEditor, getEditorCode, renderLogs } from "./editor/setup.js"
 import type { editor } from "monaco-editor"
@@ -8,32 +8,48 @@ import type { editor } from "monaco-editor"
 setupMonacoEnvironment()
 
 let editorInstance: editor.IStandaloneCodeEditor | null = null
-
 let currentSlide = 0
-let currentZoom: "fit" | number = "fit"
-let previewBuilt = false
 let slideCount = 0
+let slideImages: string[] = []
+let previewBuilt = false
 
 function getEl(id: string): HTMLElement {
   return document.getElementById(id)!
 }
 
-// ── Preview build ──
-
 function buildPreviewApp(): void {
   if (previewBuilt) return
-  const tmpl = document.getElementById("previewAppTmpl") as HTMLTemplateElement
-  const clone = tmpl.content.firstElementChild!.cloneNode(true) as HTMLElement
+
   const previewOut = getEl("previewOutput")
-  previewOut.innerHTML = ""
-  previewOut.appendChild(clone)
+  previewOut.innerHTML = `
+    <div class="preview-app">
+      <div class="preview-main">
+        <div class="preview-viewport" id="previewViewport">
+          <div class="preview-empty">Ejecut&aacute; el JS para ver la vista previa</div>
+        </div>
+      </div>
+      <div class="preview-controls">
+        <button class="preview-nav" id="prevSlide" title="Anterior">&larr;</button>
+        <span class="preview-counter" id="slideCounter">0 / 0</span>
+        <button class="preview-nav" id="nextSlide" title="Siguiente">&rarr;</button>
+        <div class="preview-zoom">
+          <button class="preview-zoom-btn" data-zoom="fit">Fit</button>
+          <button class="preview-zoom-btn" data-zoom="100">100%</button>
+          <button class="preview-zoom-btn" data-zoom="75">75%</button>
+          <button class="preview-zoom-btn" data-zoom="50">50%</button>
+        </div>
+      </div>
+      <div class="preview-thumbs" id="previewThumbs"></div>
+    </div>
+  `
 
   getEl("prevSlide").addEventListener("click", () => navigate(-1))
   getEl("nextSlide").addEventListener("click", () => navigate(1))
+
   document.querySelectorAll(".preview-zoom-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const zoom = (btn as HTMLButtonElement).dataset.zoom!
-      setZoom(zoom === "fit" ? "fit" : Number.parseInt(zoom))
+      setZoom(zoom)
     })
   })
 
@@ -46,93 +62,114 @@ function buildPreviewApp(): void {
   previewBuilt = true
 }
 
-// ── Show preview ──
-
-function showPreview(pres: PptxInstance): void {
-  if (!previewBuilt) buildPreviewApp()
-  slideCount = (pres.slides || []).length
-  renderJsThumbnails(pres)
-  currentSlide = 0
-  currentZoom = "fit"
-  switchTab("preview")
-  renderCurrentJsSlide(pres)
-}
-
-// ── Thumbnails ──
-
-function renderJsThumbnails(pres: PptxInstance): void {
+async function renderThumbnails(): Promise<void> {
   const thumbsEl = getEl("previewThumbs")
-  const slides = (pres.slides || []) as Array<{ background?: { color?: string }; _slideObjects?: unknown[] }>
+  thumbsEl.innerHTML = ""
+
   const thumbScale = 14
-  const w = Math.round(10 * thumbScale)
-  const h = Math.round(5.625 * thumbScale)
+  const thumbW = Math.round(10 * thumbScale)
+  const thumbH = Math.round(5.625 * thumbScale)
 
-  thumbsEl.innerHTML = slides
-    .map((slide, i) => {
-      const html = renderJsSlide(slide, i, thumbScale)
-      return `<div class="preview-thumb" data-slide="${i}" style="width:${w}px;height:${h}px;overflow:hidden">${html}</div>`
+  for (let i = 0; i < slideCount; i++) {
+    const img = document.createElement("img")
+    img.src = slideImages[i]
+    img.style.width = `${thumbW}px`
+    img.style.height = `${thumbH}px`
+    img.style.objectFit = "cover"
+    img.style.cursor = "pointer"
+    img.style.borderRadius = "3px"
+    img.style.border = "2px solid transparent"
+    img.style.opacity = "0.7"
+    img.style.transition = "opacity 0.15s, border-color 0.15s"
+
+    if (i === currentSlide) {
+      img.style.borderColor = "var(--gold)"
+      img.style.opacity = "1"
+    }
+
+    img.addEventListener("click", () => {
+      currentSlide = i
+      renderCurrentSlide()
     })
-    .join("")
 
-  thumbsEl.querySelectorAll(".preview-thumb").forEach((thumb) => {
-    thumb.addEventListener("click", () => {
-      const idx = Number.parseInt((thumb as HTMLElement).dataset.slide!)
-      currentSlide = idx
-      renderCurrentJsSlide(pres)
-    })
-  })
-
-  updateThumbHighlight()
+    thumbsEl.appendChild(img)
+  }
 }
 
-// ── Main slide render ──
-
-function renderCurrentJsSlide(pres: PptxInstance): void {
-  const slides = (pres.slides || []) as Array<{ background?: { color?: string }; _slideObjects?: unknown[] }>
-  const slide = slides[currentSlide]
-  if (!slide) return
-  const scale = resolveScale()
+async function renderCurrentSlide(): Promise<void> {
   const viewport = getEl("previewViewport")
-  viewport.innerHTML = `<div class="preview-slide-wrap"><div class="preview-slide">${renderJsSlide(slide, currentSlide, scale)}</div></div>`
+  const slideImg = document.createElement("img")
+  slideImg.src = slideImages[currentSlide]
+  slideImg.style.maxWidth = "100%"
+  slideImg.style.maxHeight = "100%"
+  slideImg.style.objectFit = "contain"
+  slideImg.style.borderRadius = "4px"
+  slideImg.style.boxShadow = "0 4px 24px rgba(0,0,0,.4)"
+
+  viewport.innerHTML = ""
+  viewport.appendChild(slideImg)
+
   updateCounter()
-  updateThumbHighlight()
   updateNavButtons()
-  updateZoomButtons()
+  updateThumbHighlight()
 }
 
-function resolveScale(): number {
-  if (currentZoom !== "fit") return (currentZoom / 100) * 96
-  const viewport = getEl("previewViewport")
-  void viewport.offsetWidth
-  const rect = viewport.getBoundingClientRect()
-  const maxW = Math.max(1, rect.width - 48)
-  const maxH = Math.max(1, rect.height - 48)
-  const scaleW = maxW / 10
-  const scaleH = maxH / 5.625
-  return Math.max(20, Math.round(Math.min(scaleW, scaleH, 192)))
-}
+async function showPreview(): Promise<void> {
+  if (!previewBuilt) buildPreviewApp()
 
-// ── Navigation ──
-
-function navigate(dir: number): void {
   const pres = getLastPres()
   if (!pres) return
+
+  slideCount = (pres.slides || []).length
+  currentSlide = 0
+  slideImages = []
+
+  switchTab("preview")
+
+  getEl("previewViewport").innerHTML = '<div class="preview-empty">Generando preview...</div>'
+
+  for (let i = 0; i < slideCount; i++) {
+    const img = await captureSlideToPng(i, 192)
+    if (img) {
+      slideImages.push(img)
+    } else {
+      slideImages.push("")
+    }
+  }
+
+  await renderThumbnails()
+  await renderCurrentSlide()
+}
+
+function setZoom(zoom: string): void {
+  const viewport = getEl("previewViewport")
+  const img = viewport.querySelector("img") as HTMLImageElement | null
+  if (!img) return
+
+  if (zoom === "fit") {
+    img.style.width = "100%"
+    img.style.height = "100%"
+  } else {
+    const pct = Number.parseInt(zoom) / 100
+    img.style.width = `${960 * pct}px`
+    img.style.height = `${540 * pct}px`
+  }
+
+  document.querySelectorAll(".preview-zoom-btn").forEach((btn) => {
+    btn.classList.toggle("zoom-active", (btn as HTMLButtonElement).dataset.zoom === zoom)
+  })
+}
+
+function navigate(dir: number): void {
   const next = currentSlide + dir
   if (next < 0 || next >= slideCount) return
   currentSlide = next
-  renderCurrentJsSlide(pres)
+  renderCurrentSlide()
 
-  const thumbEl = document.querySelector(`.preview-thumb[data-slide="${currentSlide}"]`)
-  thumbEl?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+  const thumbsEl = getEl("previewThumbs")
+  const thumbImgs = thumbsEl.querySelectorAll("img")
+  thumbImgs[next]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
 }
-
-function setZoom(zoom: "fit" | number): void {
-  currentZoom = zoom
-  const pres = getLastPres()
-  if (pres) renderCurrentJsSlide(pres)
-}
-
-// ── UI updates ──
 
 function updateCounter(): void {
   getEl("slideCounter").textContent = `${currentSlide + 1} / ${slideCount}`
@@ -146,20 +183,14 @@ function updateNavButtons(): void {
 }
 
 function updateThumbHighlight(): void {
-  document.querySelectorAll(".preview-thumb").forEach((t) => t.classList.remove("preview-thumb-active"))
-  const active = document.querySelector(`.preview-thumb[data-slide="${currentSlide}"]`)
-  active?.classList.add("preview-thumb-active")
-}
-
-function updateZoomButtons(): void {
-  document.querySelectorAll(".preview-zoom-btn").forEach((btn) => {
-    const z = (btn as HTMLButtonElement).dataset.zoom!
-    const isActive = currentZoom === "fit" ? z === "fit" : Number.parseInt(z) === currentZoom / 96 * 100
-    btn.classList.toggle("zoom-active", isActive)
+  const thumbsEl = getEl("previewThumbs")
+  const thumbImgs = thumbsEl.querySelectorAll("img")
+  thumbImgs.forEach((img, i) => {
+    const isActive = i === currentSlide
+    img.style.borderColor = isActive ? "var(--gold)" : "transparent"
+    img.style.opacity = isActive ? "1" : "0.7"
   })
 }
-
-// ── Tabs ──
 
 function switchTab(name: "logs" | "preview"): void {
   const logOut = getEl("logOutput")
@@ -173,29 +204,16 @@ function switchTab(name: "logs" | "preview"): void {
 
   logOut.style.display = name === "logs" ? "" : "none"
   previewOut.style.display = name === "preview" ? "flex" : "none"
-
-  if (name === "preview") {
-    const pres = getLastPres()
-    if (pres) {
-      requestAnimationFrame(() => renderCurrentJsSlide(pres))
-    }
-  }
 }
-
-// ── Keyboard ──
 
 function handleKeyboard(e: KeyboardEvent): void {
   if (getEl("previewOutput").style.display === "none") return
-  const pres = getLastPres()
-  if (!pres) return
 
   if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); navigate(-1) }
   else if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); navigate(1) }
-  else if (e.key === "Home") { e.preventDefault(); currentSlide = 0; renderCurrentJsSlide(pres) }
-  else if (e.key === "End") { e.preventDefault(); currentSlide = slideCount - 1; renderCurrentJsSlide(pres) }
+  else if (e.key === "Home") { e.preventDefault(); currentSlide = 0; renderCurrentSlide() }
+  else if (e.key === "End") { e.preventDefault(); currentSlide = slideCount - 1; renderCurrentSlide() }
 }
-
-// ── Execute ──
 
 async function initEditor(container: HTMLElement): Promise<void> {
   editorInstance = await createEditor({
@@ -227,8 +245,7 @@ async function handleRun(): Promise<void> {
     addLog("Presentacion generada correctamente", "success")
     pptxBtn.disabled = false
     pdfBtn.disabled = false
-    const pres = getLastPres()
-    if (pres) showPreview(pres)
+    await showPreview()
   } catch (e) {
     addLog("Error: " + (e as Error).message, "error")
   }

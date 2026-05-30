@@ -50,6 +50,14 @@ export async function executeJsCode(code: string): Promise<void> {
         }
         return origAddText(textArr, opts)
       }
+
+      const origAddTable = slide.addTable.bind(slide)
+      ;(slide as any)._capturedTables = []
+      slide.addTable = function (tableRows, options) {
+        ;(slide as any)._capturedTables.push({ rows: tableRows, options })
+        return origAddTable(tableRows, options)
+      }
+
       return slide
     }
 
